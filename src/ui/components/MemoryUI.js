@@ -162,9 +162,10 @@ export class MemoryUI {
 
     /**
      * 获取上次总结的楼层（综合Metadata和世界书）
+     * @param {boolean} forceSync - 是否强制使用世界书进度（即使比当前记录小）
      * @returns {Promise<number>} 上次总结的楼层索引（Next Start Index）
      */
-    async getLastSummarizedFloor() {
+    async getLastSummarizedFloor(forceSync = false) {
         // 1. 获取 Metadata 中的值
         let lastSummarized = this.getFromChatMetadata('lastSummarizedFloor') ?? 0;
         
@@ -172,7 +173,7 @@ export class MemoryUI {
         const syncEnabled = $('#memory_auto_sync_world_info').prop('checked') || 
                            this.settings?.memory?.autoSummarize?.syncWorldInfo || false;
                            
-        if (!syncEnabled) {
+        if (!syncEnabled && !forceSync) {
             return lastSummarized;
         }
 
@@ -228,17 +229,23 @@ export class MemoryUI {
             });
 
             if (maxFloor > -1) {
-                // maxFloor 是已总结的最后一层 (例如 92)
-                // 下一次开始应该是 maxFloor + 1 (例如 93)
+                // maxFloor 是已总结的最后一层 (例如 4)
+                // 下一次开始应该是 maxFloor + 1 (例如 5)
                 const worldInfoNextStart = maxFloor + 1;
                 
-                if (worldInfoNextStart > lastSummarized) {
-                    console.log(`[MemoryUI] 同步世界书进度: ${lastSummarized} -> ${worldInfoNextStart} (检测到最大楼层 #${maxFloor})`);
+                // 如果是强制同步，或者检测到的进度比当前记录的大
+                if (forceSync || worldInfoNextStart > lastSummarized) {
+                    console.log(`[MemoryUI] 同步世界书进度: ${lastSummarized} -> ${worldInfoNextStart} (检测到最大楼层 #${maxFloor}, 强制: ${forceSync})`);
                     
-                    // 自动更新 metadata，这样下次不用重复解析
+                    // 自动更新 metadata
                     this.saveToChatMetadata('lastSummarizedFloor', worldInfoNextStart);
                     return worldInfoNextStart;
                 }
+            } else if (forceSync) {
+                // 强制同步但没找到任何楼层信息，重置为0
+                console.log('[MemoryUI] 强制同步但未在世界书中发现楼层信息，重置为0');
+                this.saveToChatMetadata('lastSummarizedFloor', 0);
+                return 0;
             }
         } catch (error) {
             console.warn('[MemoryUI] 同步世界书进度失败:', error);
@@ -1303,14 +1310,36 @@ export class MemoryUI {
     /**
      * Reset auto-summarize base floor to current floor
      */
-    resetAutoSummarize() {
+    async resetAutoSummarize() {
         const context = this.getContext ? this.getContext() : getContext();
         
         if (!context || !context.chat) {
             this.toastr?.warning('无法重置：聊天上下文不可用');
             return;
         }
+
+        const syncEnabled = $('#memory_auto_sync_world_info').prop('checked') || 
+                           this.settings?.memory?.autoSummarize?.syncWorldInfo || false;
         
+        // 如果启用了同步，则强制从世界书同步
+        if (syncEnabled) {
+            console.log('[MemoryUI] 重置自动总结：强制从世界书同步进度');
+            const lastSummarized = await this.getLastSummarizedFloor(true);
+            
+            this.updateAutoSummarizeStatus();
+            
+            const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
+            const nextFloor = lastSummarized + interval;
+            
+            if (lastSummarized > 0) {
+                this.toastr?.success(`已同步世界书进度！下次将在楼层 #${nextFloor + 1} 触发总结`);
+            } else {
+                this.toastr?.info(`已重置（未在世界书中发现进度），下次将在楼层 #${nextFloor + 1} 触发总结`);
+            }
+            return;
+        }
+        
+        // 否则执行原逻辑：重置为当前楼层
         const currentFloor = context.chat.length - 1;
         
         // 保存当前楼层作为新的基准点
@@ -1452,19 +1481,44 @@ export class MemoryUI {
             // 确保保留数量至少为1
             const actualKeepCount = Math.max(1, keepCount);
             
+            // 获取步进间隔
+            const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
+
             // 计算要总结的范围
             // currentFloor是当前楼层（从0开始）
             // actualKeepCount是要保留的层数
             // 上次总结的位置（包含世界书同步逻辑）
             const lastSummarized = await this.getLastSummarizedFloor();
             
-            // 总结范围：从上次总结位置开始，到当前楼层-保留数量
+            // 总结范围起点
             const startIndex = lastSummarized;
-            const endIndex = currentFloor - actualKeepCount;
+            
+            // 智能追赶逻辑：
+            // 计算按照固定步进的理想终点
+            // 例如：start=5, interval=10 -> target=14 (5,6,...14 共10层)
+            const targetEndIndex = startIndex + interval - 1;
+            
+            // 计算实际允许的最大总结点（保留最新 keepCount 条）
+            const maxAllowedIndex = currentFloor - actualKeepCount;
+            
+            // 最终决定终点
+            // 如果目标终点超过了允许范围，说明不够凑齐一个周期，应该等待
+            // 除非启用了"强制同步"或其他逻辑，这里我们坚持"整周期总结"原则以保持一致性
+            if (targetEndIndex > maxAllowedIndex) {
+                console.log('[MemoryUI] 消息数量不足一个完整周期，等待更多消息', {
+                    startIndex,
+                    targetEndIndex,
+                    maxAllowedIndex,
+                    interval
+                });
+                // 静默返回，不显示警告，因为这在追赶模式下是正常的停止条件
+                return;
+            }
+            
+            const endIndex = targetEndIndex;
             
             if (endIndex <= startIndex) {
-                console.log('[MemoryUI] 消息数量不足，无需总结');
-                this.toastr?.warning('消息数量不足，无需总结');
+                console.log('[MemoryUI] 范围计算异常', { startIndex, endIndex });
                 return;
             }
 
@@ -1680,12 +1734,33 @@ export class MemoryUI {
             
             // 如果失败了，也要显示加载完成
             this.hideLoading();
-        } finally {
-            // 无论成功还是失败，都要清除标志
-            this.isAutoSummarizing = false;
-            console.log('[MemoryUI] 自动总结完成，清除并发标志');
-        }
-    }
+                    } finally {
+                        // 无论成功还是失败，都要清除标志
+                        this.isAutoSummarizing = false;
+                        console.log('[MemoryUI] 自动总结完成，清除并发标志');
+        
+                        // 智能追赶：如果还有“欠账”，自动再次触发检查
+                        // 确保在最后一步处理，且只在成功或特定情况下追赶
+                        if (result?.success && this.settings?.memory?.autoSummarize?.enabled) {
+                            const latestLastSummarized = await this.getLastSummarizedFloor(); // 获取最新的已总结楼层
+                            const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
+                            const keepCount = parseInt($('#memory_auto_summarize_count').val()) || 6;
+                            const context = getContext();
+                            const currentFloor = context.chat.length - 1;
+                            const maxAllowedIndex = currentFloor - keepCount;
+        
+                            // 计算下一个周期应该开始的楼层
+                            const nextCycleStart = latestLastSummarized; // 因为 latestLastSummarized 已经是 nextStartIndex
+                            const nextCycleEnd = nextCycleStart + interval - 1;
+        
+                            if (nextCycleEnd <= maxAllowedIndex) {
+                                console.log('[MemoryUI] 检测到还有未总结的周期，将在短时间后继续追赶...', { nextCycleStart, nextCycleEnd, maxAllowedIndex });
+                                setTimeout(() => this.checkAutoSummarize(), 500); // 稍作延迟再次检查
+                            } else {
+                                console.log('[MemoryUI] 已追赶到最新进度附近，等待新消息触发下一个周期');
+                            }
+                        }
+                    }    }
 
     /**
      * Hide floors if enabled in settings
