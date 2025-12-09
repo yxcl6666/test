@@ -53,9 +53,26 @@ export class SettingsPanel {
         try {
             console.log('SettingsPanel: Loading template...');
 
+            // Dynamically determine the extension path from import.meta.url
+            // Expected URL format: .../scripts/extensions/third-party/FOLDER_NAME/src/ui/components/SettingsPanel.js
+            const urlParts = import.meta.url.split('/');
+            const extensionsIndex = urlParts.indexOf('extensions');
+            let extensionPath = 'third-party/vectors-enhanced'; // Fallback default
+
+            if (extensionsIndex !== -1 && urlParts.length > extensionsIndex + 3) {
+                // Extract 'third-party/folder-name'
+                // urlParts[extensionsIndex] is 'extensions'
+                // urlParts[extensionsIndex + 1] is usually 'third-party'
+                // urlParts[extensionsIndex + 2] is the folder name
+                extensionPath = `${urlParts[extensionsIndex + 1]}/${urlParts[extensionsIndex + 2]}`;
+                console.log('SettingsPanel: Detected extension path:', extensionPath);
+            } else {
+                console.warn('SettingsPanel: Could not detect extension path from URL, using default:', extensionPath);
+            }
+
             // Use the same template loading logic as the original
             // Note: Using 'settings-modular' instead of 'settings' for the new modular template
-            const template = await this.renderExtensionTemplateAsync('third-party/vectors-enhanced', 'settings-modular');
+            const template = await this.renderExtensionTemplateAsync(extensionPath, 'settings-modular');
             $(this.targetSelector).append(template);
             this.templateLoaded = true;
             console.log('SettingsPanel: Template loaded and appended successfully');
