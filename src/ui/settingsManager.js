@@ -1096,8 +1096,8 @@ export class SettingsManager {
    */
   async initializeExternalTaskUI() {
     try {
-      // 动态导入ExternalTaskUI - 使用完整路径解决模块加载问题
-      const modulePath = '/scripts/extensions/third-party/vectors-enhanced/src/ui/components/ExternalTaskUI.js';
+      // 动态导入ExternalTaskUI - 使用相对路径解决模块加载问题
+      const modulePath = './components/ExternalTaskUI.js';
       const { ExternalTaskUI } = await import(modulePath);
       
       // 创建并初始化外挂任务UI
@@ -1139,7 +1139,7 @@ export class SettingsManager {
   async initializeVectorStoragePathUI() {
     try {
       // 动态导入VectorStoragePathUI
-      const modulePath = '/scripts/extensions/third-party/vectors-enhanced/src/ui/components/VectorStoragePathUI.js';
+      const modulePath = './components/VectorStoragePathUI.js';
       const { VectorStoragePathUI } = await import(modulePath);
       
       // 创建并初始化向量存储路径UI
