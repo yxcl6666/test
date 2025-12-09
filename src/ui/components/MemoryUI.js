@@ -59,7 +59,8 @@ const defaultMemorySettings = {
         enabled: false,
         interval: 20,  // 每20层自动总结
         messageCount: 6,  // 保留最近6层消息
-        lastSummarizedFloor: 0  // 上次总结的楼层
+        lastSummarizedFloor: 0,  // 上次总结的楼层
+        autoVectorize: true // 默认开启总结前自动向量化
     },
     hideFloorsAfterSummary: false,  // 总结后隐藏楼层
     disableWorldInfoAfterVectorize: false  // 向量化后禁用世界书条目
@@ -199,7 +200,7 @@ export class MemoryUI {
             this.saveApiConfig();
         });
         
-        $('#memory_auto_summarize_interval, #memory_auto_summarize_count')
+        $('#memory_auto_summarize_interval, #memory_auto_summarize_count, #memory_auto_vectorize_before_summary')
             .off('change input').on('change input', (e) => {
                 // 如果是保留数量输入框，确保最小值为1
                 if (e.target.id === 'memory_auto_summarize_count') {
@@ -746,7 +747,8 @@ export class MemoryUI {
                 interval: parseInt($('#memory_auto_summarize_interval').val()) || 20,
                 messageCount: Math.max(1, parseInt($('#memory_auto_summarize_count').val()) || 1),
                 // 不再保存 lastSummarizedFloor 到全局设置，它现在存储在聊天元数据中
-                lastSummarizedFloor: this.settings?.memory?.autoSummarize?.lastSummarizedFloor || 0
+                lastSummarizedFloor: this.settings?.memory?.autoSummarize?.lastSummarizedFloor || 0,
+                autoVectorize: $('#memory_auto_vectorize_before_summary').prop('checked')
             },
             hideFloorsAfterSummary: $('#memory_hide_floors_after_summary').prop('checked'),
             disableWorldInfoAfterVectorize: $('#memory_disable_world_info_after_vectorize').prop('checked')
@@ -809,6 +811,7 @@ export class MemoryUI {
             $('#memory_auto_summarize_enabled').prop('checked', config.autoSummarize.enabled || false);
             $('#memory_auto_summarize_interval').val(config.autoSummarize.interval || 20);
             $('#memory_auto_summarize_count').val(config.autoSummarize.messageCount || 6);
+            $('#memory_auto_vectorize_before_summary').prop('checked', config.autoSummarize.autoVectorize !== false); // 默认为 true
             $('#memory_auto_summarize_settings').toggle(config.autoSummarize.enabled || false);
             $('#memory_auto_summarize_status').toggle(config.autoSummarize.enabled || false);
             if (config.autoSummarize.enabled) {
@@ -1380,7 +1383,10 @@ export class MemoryUI {
             // ---------------------------------------------------------
             // 自动向量化处理
             // ---------------------------------------------------------
-            if (this.performVectorization) {
+            // 检查设置是否启用了自动向量化（默认为true）
+            const autoVectorizeEnabled = settings.memory?.autoSummarize?.autoVectorize !== false;
+            
+            if (this.performVectorization && autoVectorizeEnabled) {
                  try {
                     // 获取范围内所有消息（用户+AI）
                     const vectorizeOptions = {
