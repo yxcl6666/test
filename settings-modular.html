@@ -414,6 +414,12 @@
                   <input id="memory_auto_sync_world_info" type="checkbox" />
                   <small>基于世界书进度触发</small>
                 </label>
+                <div style="margin-left: 1.5rem; margin-top: 4px;">
+                  <small style="color: var(--SmartThemeQuoteColor); font-size: 11px;">
+                    <i class="fa fa-info-circle"></i>
+                    智能追赶：如果发现历史总结，会自动从历史最后层开始按间隔计算触发点，直到追上当前进度
+                  </small>
+                </div>
               </div>
 
               <!-- Auto-Summarize Status -->
@@ -427,6 +433,12 @@
                           title="重置自动总结基准点为当前楼层">
                     <i class="fa fa-refresh"></i> 重置
                   </button>
+                </div>
+                <div style="margin-top: 4px;">
+                  <small style="color: var(--SmartThemeQuoteColor); font-size: 11px;">
+                    <i class="fa fa-info-circle"></i>
+                    说明：达到该楼层时触发总结，总结范围为从上次结束到该层的前一层（保留的层数不会被总结）
+                  </small>
                 </div>
               </div>
 
