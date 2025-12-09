@@ -1,3 +1,5 @@
+# 源自于https://github.com/RaphllA/vectors-enhanced ，用于添加一些自定义功能
+
 # Vectors Enhanced - SillyTavern 高级向量化扩展
 
 
