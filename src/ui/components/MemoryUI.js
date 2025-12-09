@@ -2178,21 +2178,15 @@ export class MemoryUI {
 
             // 获取API配置
             const apiSource = $('#memory_api_source').val() || this.settings?.memory?.source || 'google_openai';
-            let apiConfig;
+            const apiConfig = this.getApiConfig();
 
-            if (apiSource === 'google_openai') {
-                apiConfig = {
-                    apiKey: $('#memory_google_openai_api_key').val() || this.settings?.memory?.google_openai?.apiKey,
-                    model: $('#memory_google_openai_model').val() || this.settings?.memory?.google_openai?.model
-                };
-            } else if (apiSource === 'openai_compatible') {
-                apiConfig = {
-                    url: $('#memory_openai_url').val() || this.settings?.memory?.openai_compatible?.url,
-                    apiKey: $('#memory_openai_api_key').val() || this.settings?.memory?.openai_compatible?.apiKey,
-                    model: $('#memory_openai_model').val() || this.settings?.memory?.openai_compatible?.model,
-                    proxyMode: $('#memory_openai_proxy_mode').prop('checked') || this.settings?.memory?.openai_compatible?.proxyMode
-                };
-            }
+            // 添加调试日志
+            console.log('[MemoryUI] performAutoSummarizeDirect API配置:', {
+                apiSource,
+                apiConfig,
+                hasModel: !!apiConfig.model,
+                modelValue: apiConfig.model
+            });
 
             // 执行总结
             const maxTokens = parseInt($('#memory_max_tokens').val()) || this.settings.memory?.maxTokens || defaultMemorySettings.maxTokens;
