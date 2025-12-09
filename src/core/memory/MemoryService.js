@@ -4,6 +4,7 @@
  */
 import { chat_metadata, saveMetadata } from '../../../../../../../script.js';
 import { createWorldInfoEntry, saveWorldInfo } from '../../../../../../world-info.js';
+import { METADATA_KEY } from '../../../../../../world-info.js';
 
 export class MemoryService {
     constructor(dependencies = {}) {
@@ -501,7 +502,7 @@ export class MemoryService {
             // 将世界书绑定为chat lore
             if (chat_metadata && saveMetadata) {
                 // 设置chat metadata，使用正确的key名称
-                chat_metadata['world_info'] = worldBookName;
+                chat_metadata[METADATA_KEY] = worldBookName;
 
                 // 保存metadata
                 await saveMetadata();
