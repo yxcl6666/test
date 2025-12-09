@@ -60,7 +60,8 @@ const defaultMemorySettings = {
         interval: 20,  // 每20层自动总结
         messageCount: 6,  // 保留最近6层消息
         lastSummarizedFloor: 0,  // 上次总结的楼层
-        autoVectorize: true // 默认开启总结前自动向量化
+        autoVectorize: true, // 默认开启总结前自动向量化
+        syncWorldInfo: false // 是否同步世界书进度
     },
     hideFloorsAfterSummary: false,  // 总结后隐藏楼层
     disableWorldInfoAfterVectorize: false  // 向量化后禁用世界书条目
@@ -159,6 +160,93 @@ export class MemoryUI {
         return value;
     }
 
+    /**
+     * 获取上次总结的楼层（综合Metadata和世界书）
+     * @returns {Promise<number>} 上次总结的楼层索引（Next Start Index）
+     */
+    async getLastSummarizedFloor() {
+        // 1. 获取 Metadata 中的值
+        let lastSummarized = this.getFromChatMetadata('lastSummarizedFloor') ?? 0;
+        
+        // 2. 检查是否开启了同步世界书选项
+        const syncEnabled = $('#memory_auto_sync_world_info').prop('checked') || 
+                           this.settings?.memory?.autoSummarize?.syncWorldInfo || false;
+                           
+        if (!syncEnabled) {
+            return lastSummarized;
+        }
+
+        try {
+            // 3. 尝试从世界书获取进度
+            // 尝试多种方式获取chat world名称
+            let chatWorld = chat_metadata?.[METADATA_KEY];
+            if (!chatWorld) {
+                const context = this.getContext ? this.getContext() : window.getContext?.();
+                if (context && context.chat_metadata) {
+                    chatWorld = context.chat_metadata[METADATA_KEY];
+                }
+            }
+            if (!chatWorld && window.chat_metadata) {
+                chatWorld = window.chat_metadata[METADATA_KEY];
+            }
+
+            if (!chatWorld) {
+                // 没有绑定世界书，无法同步
+                return lastSummarized;
+            }
+
+            const worldData = await loadWorldInfo(chatWorld);
+            if (!worldData || !worldData.entries) {
+                return lastSummarized;
+            }
+
+            let maxFloor = -1;
+
+            // 遍历所有条目寻找楼层信息
+            Object.values(worldData.entries).forEach(entry => {
+                // 检查 comment (例如: "楼层 #80-92" 或 "楼层 #92")
+                // 正则匹配: 包含 "楼层" 或 "Floor"，后面跟着 #数字[-数字]
+                // 更加宽松的正则：匹配任何包含 #数字 的 key 或 comment
+                const textToSearch = (entry.comment || '') + ' ' + (entry.key ? entry.key.join(' ') : '');
+                
+                // 匹配模式：#123 或 #123-456
+                const matches = textToSearch.match(/#(\d+)(?:-(\d+))?/g);
+                
+                if (matches) {
+                    matches.forEach(match => {
+                        const nums = match.match(/(\d+)/g);
+                        if (nums) {
+                            nums.forEach(n => {
+                                const floor = parseInt(n, 10);
+                                if (!isNaN(floor) && floor > maxFloor) {
+                                    maxFloor = floor;
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+
+            if (maxFloor > -1) {
+                // maxFloor 是已总结的最后一层 (例如 92)
+                // 下一次开始应该是 maxFloor + 1 (例如 93)
+                const worldInfoNextStart = maxFloor + 1;
+                
+                if (worldInfoNextStart > lastSummarized) {
+                    console.log(`[MemoryUI] 同步世界书进度: ${lastSummarized} -> ${worldInfoNextStart} (检测到最大楼层 #${maxFloor})`);
+                    
+                    // 自动更新 metadata，这样下次不用重复解析
+                    this.saveToChatMetadata('lastSummarizedFloor', worldInfoNextStart);
+                    return worldInfoNextStart;
+                }
+            }
+        } catch (error) {
+            console.warn('[MemoryUI] 同步世界书进度失败:', error);
+        }
+
+        return lastSummarized;
+    }
+
     bindEventListeners() {
         // Summarize button click handler
         $('#memory_summarize_btn').off('click').on('click', () => this.handleSummarizeClick());
@@ -200,7 +288,7 @@ export class MemoryUI {
             this.saveApiConfig();
         });
         
-        $('#memory_auto_summarize_interval, #memory_auto_summarize_count, #memory_auto_vectorize_before_summary')
+        $('#memory_auto_summarize_interval, #memory_auto_summarize_count, #memory_auto_vectorize_before_summary, #memory_auto_sync_world_info')
             .off('change input').on('change input', (e) => {
                 // 如果是保留数量输入框，确保最小值为1
                 if (e.target.id === 'memory_auto_summarize_count') {
@@ -748,7 +836,8 @@ export class MemoryUI {
                 messageCount: Math.max(1, parseInt($('#memory_auto_summarize_count').val()) || 1),
                 // 不再保存 lastSummarizedFloor 到全局设置，它现在存储在聊天元数据中
                 lastSummarizedFloor: this.settings?.memory?.autoSummarize?.lastSummarizedFloor || 0,
-                autoVectorize: $('#memory_auto_vectorize_before_summary').prop('checked')
+                autoVectorize: $('#memory_auto_vectorize_before_summary').prop('checked'),
+                syncWorldInfo: $('#memory_auto_sync_world_info').prop('checked')
             },
             hideFloorsAfterSummary: $('#memory_hide_floors_after_summary').prop('checked'),
             disableWorldInfoAfterVectorize: $('#memory_disable_world_info_after_vectorize').prop('checked')
@@ -812,6 +901,7 @@ export class MemoryUI {
             $('#memory_auto_summarize_interval').val(config.autoSummarize.interval || 20);
             $('#memory_auto_summarize_count').val(config.autoSummarize.messageCount || 6);
             $('#memory_auto_vectorize_before_summary').prop('checked', config.autoSummarize.autoVectorize !== false); // 默认为 true
+            $('#memory_auto_sync_world_info').prop('checked', config.autoSummarize.syncWorldInfo || false);
             $('#memory_auto_summarize_settings').toggle(config.autoSummarize.enabled || false);
             $('#memory_auto_summarize_status').toggle(config.autoSummarize.enabled || false);
             if (config.autoSummarize.enabled) {
@@ -1171,7 +1261,7 @@ export class MemoryUI {
     /**
      * Update auto-summarize status display
      */
-    updateAutoSummarizeStatus() {
+    async updateAutoSummarizeStatus() {
         const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
         const context = this.getContext ? this.getContext() : getContext();
         
@@ -1183,11 +1273,8 @@ export class MemoryUI {
         const currentFloor = context.chat.length - 1;
         const chatId = context.chatId || 'unknown';
         
-        // 从聊天元数据获取lastSummarizedFloor
-        const lastSummarizedFromMeta = this.getFromChatMetadata('lastSummarizedFloor');
-        
-        // 如果元数据中没有值（说明从未总结过），使用0作为起始点
-        const lastSummarized = lastSummarizedFromMeta ?? 0;
+        // 获取上次总结的楼层（包含世界书同步逻辑）
+        const lastSummarized = await this.getLastSummarizedFloor();
         
         // 兼容性处理：如果lastSummarized为0，初始化为当前楼层
         if (lastSummarized === 0 && this.settings?.memory?.autoSummarize?.enabled) {
@@ -1207,7 +1294,7 @@ export class MemoryUI {
             interval,
             lastSummarized,
             nextFloor,
-            fromMetadata: this.getFromChatMetadata('lastSummarizedFloor')
+            syncEnabled: $('#memory_auto_sync_world_info').prop('checked')
         });
         
         $('#memory_next_auto_summarize_floor').text(`#${nextFloor + 1}`);
@@ -1271,8 +1358,9 @@ export class MemoryUI {
             const currentFloor = context.chat.length - 1;
             const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
             const keepCount = parseInt($('#memory_auto_summarize_count').val()) || 6;
-            // 从聊天元数据获取lastSummarizedFloor，默认为0
-            let lastSummarized = this.getFromChatMetadata('lastSummarizedFloor') ?? 0;
+            
+            // 获取上次总结的楼层（包含世界书同步逻辑）
+            let lastSummarized = await this.getLastSummarizedFloor();
             
             // 兼容性处理：如果lastSummarized为0，说明是旧版本用户或新用户
             // 初始化为当前楼层，避免立即触发
@@ -1367,8 +1455,8 @@ export class MemoryUI {
             // 计算要总结的范围
             // currentFloor是当前楼层（从0开始）
             // actualKeepCount是要保留的层数
-            // 上次总结的位置（从聊天元数据获取）
-            const lastSummarized = this.getFromChatMetadata('lastSummarizedFloor') ?? 0;
+            // 上次总结的位置（包含世界书同步逻辑）
+            const lastSummarized = await this.getLastSummarizedFloor();
             
             // 总结范围：从上次总结位置开始，到当前楼层-保留数量
             const startIndex = lastSummarized;
