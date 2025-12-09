@@ -1748,31 +1748,34 @@ export class MemoryUI {
      * Perform auto-summarization
      */
     async performAutoSummarize(currentFloor, keepCount) {
+        // 在方法开始处声明 result，确保在整个方法范围内可用
+        let result = { success: false, response: '' };
+
         try {
             console.log('[MemoryUI] performAutoSummarize 开始执行', { currentFloor, keepCount });
-            
+
             // 导入必要的函数和工具
             const { extension_settings, getContext } = await import('../../../../../../extensions.js');
             const { getMessages, createVectorItem } = await import('../../utils/chatUtils.js');
             const { extractTagContent } = await import('../../utils/tagExtractor.js');
-            
+
             const settings = extension_settings.vectors_enhanced;
             const context = getContext();
-            
+
             // 检查主开关是否启用
             if (!settings.master_enabled) {
                 console.log('[MemoryUI] 主开关已禁用，跳过自动总结');
                 return;
             }
-            
+
             this.toastr?.info('开始自动总结...');
-            
+
             // 获取标签提取规则（如果有的话）
             const rules = settings.tag_extraction_rules || [];
-            
+
             // 确保保留数量至少为1
             const actualKeepCount = Math.max(1, keepCount);
-            
+
             // 获取步进间隔
             const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
 
@@ -1781,18 +1784,18 @@ export class MemoryUI {
             // actualKeepCount是要保留的层数
             // 上次总结的位置（包含世界书同步逻辑）
             const lastSummarized = await this.getLastSummarizedFloor();
-            
+
             // 总结范围起点
             const startIndex = lastSummarized;
-            
+
             // 智能追赶逻辑：
             // 计算按照固定步进的理想终点
             // 例如：start=5, interval=10 -> target=14 (5,6,...14 共10层)
             const targetEndIndex = startIndex + interval - 1;
-            
+
             // 计算实际允许的最大总结点（保留最新 keepCount 条）
             const maxAllowedIndex = currentFloor - actualKeepCount;
-            
+
             // 最终决定终点
             // 如果目标终点超过了允许范围，说明不够凑齐一个周期，应该等待
             // 除非启用了"强制同步"或其他逻辑，这里我们坚持"整周期总结"原则以保持一致性
@@ -1806,9 +1809,9 @@ export class MemoryUI {
                 // 静默返回，不显示警告，因为这在追赶模式下是正常的停止条件
                 return;
             }
-            
+
             const endIndex = targetEndIndex;
-            
+
             if (endIndex <= startIndex) {
                 console.log('[MemoryUI] 范围计算异常', { startIndex, endIndex });
                 return;
@@ -1960,9 +1963,6 @@ export class MemoryUI {
             // 执行总结
             console.log('[MemoryUI] 调用memoryService.sendMessage前');
             const maxTokens = parseInt($('#memory_max_tokens').val()) || this.settings.memory?.maxTokens || defaultMemorySettings.maxTokens;
-
-            // 在try块外部初始化result，确保在finally块中可用
-            let result = { success: false, response: '' };
 
             try {
                 result = await this.memoryService.sendMessage(contentWithHeader, {
