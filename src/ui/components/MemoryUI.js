@@ -173,36 +173,45 @@ export class MemoryUI {
             console.log(`[MemoryUI] getBoundWorldBook: 从全局设置获取到世界书: ${chatWorld}`);
         }
 
-        // 2. 从 chat_metadata 获取
+        // 2. 从 chat_metadata 获取 - 优先使用导入的变量
+        if (!chatWorld && chat_metadata) {
+            console.log(`[MemoryUI] getBoundWorldBook: 使用导入的 chat_metadata:`, chat_metadata);
+            console.log(`[MemoryUI] getBoundWorldBook: METADATA_KEY: ${METADATA_KEY}`);
+            chatWorld = chat_metadata[METADATA_KEY];
+            console.log(`[MemoryUI] getBoundWorldBook: 从导入的 chat_metadata 获取到世界书: ${chatWorld}`);
+        }
+
+        // 3. 从 window.chat_metadata 获取
+        if (!chatWorld && window.chat_metadata) {
+            console.log(`[MemoryUI] getBoundWorldBook: window.chat_metadata:`, window.chat_metadata);
+            chatWorld = window.chat_metadata[METADATA_KEY];
+            console.log(`[MemoryUI] getBoundWorldBook: 从 window.chat_metadata 获取到世界书: ${chatWorld}`);
+        }
+
+        // 4. 从 getContext 获取
         if (!chatWorld) {
-            let chat_metadata = this.getContext?.()?.chat_metadata;
-            console.log(`[MemoryUI] getBoundWorldBook: getContext chat_metadata:`, chat_metadata);
-
-            if (!chat_metadata && window.chat_metadata) {
-                chat_metadata = window.chat_metadata;
-                console.log(`[MemoryUI] getBoundWorldBook: window.chat_metadata:`, chat_metadata);
-            }
-
-            if (chat_metadata) {
-                console.log(`[MemoryUI] getBoundWorldBook: METADATA_KEY: ${METADATA_KEY}`);
-                console.log(`[MemoryUI] getBoundWorldBook: chat_metadata keys:`, Object.keys(chat_metadata));
-                chatWorld = chat_metadata[METADATA_KEY];
-                console.log(`[MemoryUI] getBoundWorldBook: 从 chat_metadata 获取到世界书: ${chatWorld}`);
+            const context = this.getContext?.();
+            if (context && context.chat_metadata) {
+                console.log(`[MemoryUI] getBoundWorldBook: context.chat_metadata:`, context.chat_metadata);
+                chatWorld = context.chat_metadata[METADATA_KEY];
+                console.log(`[MemoryUI] getBoundWorldBook: 从 context.chat_metadata 获取到世界书: ${chatWorld}`);
             }
         }
 
-        // 3. 从 SillyTavern 的 world_info 获取当前选中的世界书
+        // 5. 从 SillyTavern 的 world_info 获取当前选中的世界书
         if (!chatWorld && typeof selected_world_info !== 'undefined') {
             chatWorld = selected_world_info;
             console.log(`[MemoryUI] getBoundWorldBook: 从 selected_world_info 获取到世界书: ${chatWorld}`);
         }
 
-        // 4. 如果还是没有，尝试使用第一个可用的世界书
+        // 6. 如果还是没有，尝试使用第一个可用的世界书
         if (!chatWorld && world_info && world_info.world_items) {
             const worldBooks = Object.keys(world_info.world_items);
             if (worldBooks.length > 0) {
                 chatWorld = worldBooks[0];
                 console.log(`[MemoryUI] getBoundWorldBook: 没有绑定的世界书，使用第一个可用世界书: ${chatWorld}`);
+                // 自动绑定这个世界书
+                this.bindWorldBook(chatWorld);
             }
         }
 
@@ -218,12 +227,12 @@ export class MemoryUI {
         // 1. 获取 Metadata 中的值
         let lastSummarized = this.getFromChatMetadata('lastSummarizedFloor') ?? 0;
         console.log(`[MemoryUI] getLastSummarizedFloor: 初始 lastSummarized (from metadata): ${lastSummarized}`);
-        
+
         // 2. 检查是否开启了同步世界书选项
-        const syncEnabled = $('#memory_auto_sync_world_info').prop('checked') || 
+        const syncEnabled = $('#memory_auto_sync_world_info').prop('checked') ||
                            this.settings?.memory?.autoSummarize?.syncWorldInfo || false;
         console.log(`[MemoryUI] getLastSummarizedFloor: syncEnabled: ${syncEnabled}, forceSync: ${forceSync}`);
-                           
+
         if (!syncEnabled && !forceSync) {
             console.log(`[MemoryUI] getLastSummarizedFloor: 同步未启用且未强制同步，返回 metadata 值: ${lastSummarized}`);
             return lastSummarized;
@@ -231,8 +240,15 @@ export class MemoryUI {
 
         try {
             // 3. 尝试从世界书获取进度
-            const chatWorld = this.getBoundWorldBook();
+            let chatWorld = this.getBoundWorldBook();
             console.log(`[MemoryUI] getLastSummarizedFloor: 获取到的 chatWorld: ${chatWorld}`);
+
+            // 如果没有绑定世界书，尝试自动绑定
+            if (!chatWorld && (syncEnabled || forceSync)) {
+                console.log('[MemoryUI] getLastSummarizedFloor: 没有绑定世界书，尝试自动绑定...');
+                chatWorld = this.ensureWorldBookBound();
+                console.log(`[MemoryUI] getLastSummarizedFloor: 自动绑定后的 chatWorld: ${chatWorld}`);
+            }
 
             if (!chatWorld) {
                 console.warn('[MemoryUI] getLastSummarizedFloor: 没有绑定世界书，无法同步。');
@@ -1465,11 +1481,30 @@ export class MemoryUI {
     }
 
     /**
+     * 确保有绑定的世界书
+     */
+    ensureWorldBookBound() {
+        let chatWorld = this.getBoundWorldBook();
+
+        if (!chatWorld && world_info && world_info.world_items) {
+            const worldBooks = Object.keys(world_info.world_items);
+            if (worldBooks.length > 0) {
+                console.log('[MemoryUI] ensureWorldBookBound: 没有绑定的世界书，自动选择第一个');
+                chatWorld = worldBooks[0];
+                this.bindWorldBook(chatWorld);
+                return chatWorld;
+            }
+        }
+
+        return chatWorld;
+    }
+
+    /**
      * 绑定世界书到当前对话
      */
     bindWorldBook(worldBookName) {
         try {
-            // 确保 chat_metadata 存在
+            // 确保 window.chat_metadata 存在
             if (!window.chat_metadata) {
                 window.chat_metadata = {};
             }
@@ -1477,12 +1512,24 @@ export class MemoryUI {
             // 设置世界书绑定
             window.chat_metadata[METADATA_KEY] = worldBookName;
 
+            // 也更新导入的 chat_metadata（如果存在）
+            if (chat_metadata) {
+                chat_metadata[METADATA_KEY] = worldBookName;
+            }
+
+            // 尝试获取 context 并更新
+            const context = this.getContext?.();
+            if (context && context.chat_metadata) {
+                context.chat_metadata[METADATA_KEY] = worldBookName;
+            }
+
             // 保存 metadata
             if (typeof saveMetadata === 'function') {
                 saveMetadata();
             }
 
             console.log(`[MemoryUI] 已绑定世界书 "${worldBookName}" 到当前对话`);
+            console.log(`[MemoryUI] window.chat_metadata:`, window.chat_metadata);
 
             // 更新UI按钮状态
             if (window.$) {
