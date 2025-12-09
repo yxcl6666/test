@@ -1379,15 +1379,21 @@ export class MemoryUI {
             }
         }
 
-        // 简化后的计算逻辑：直接基于lastSummarized计算
-        const nextFloor = lastSummarized + interval;
+        // 获取实际最后总结的楼层（lastSummarized - 1）
+        // 因为 lastSummarized 存储的是下次开始的索引
+        const lastActualFloor = lastSummarized - 1;
+
+        // 基于最后总结的楼层计算下次触发
+        const nextFloor = lastActualFloor + interval;
 
         console.log('[MemoryUI] updateAutoSummarizeStatus:', {
             chatId,
             currentFloor,
             interval,
             lastSummarized,
+            lastActualFloor,
             nextFloor,
+            nextFloorDisplay: nextFloor + 1,
             syncEnabled: $('#memory_auto_sync_world_info').prop('checked')
         });
 
@@ -1607,7 +1613,7 @@ export class MemoryUI {
             this.updateAutoSummarizeStatus();
             
             const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
-            const nextFloor = lastSummarized + interval;
+            const nextFloor = (lastSummarized - 1) + interval;
             
             if (lastSummarized > 0) {
                 this.toastr?.success(`已同步世界书进度！下次将在楼层 #${nextFloor + 1} 触发总结`);
@@ -1687,8 +1693,8 @@ export class MemoryUI {
                 enabled: this.settings?.memory?.autoSummarize?.enabled
             });
             
-            // 简化后的触发条件：直接基于lastSummarized计算
-            const nextTriggerFloor = lastSummarized + interval;
+            // 简化后的触发条件：基于最后总结的楼层计算
+            const nextTriggerFloor = (lastSummarized - 1) + interval;
             
             // 当前楼层必须达到或超过下次触发楼层才触发
             if (currentFloor < nextTriggerFloor) {
