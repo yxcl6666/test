@@ -2067,6 +2067,14 @@ export class MemoryUI {
             const nextCycleStart = latestLastSummarized;
             const nextCycleEnd = nextCycleStart + interval - 1;
 
+            console.log(`[MemoryUI] 智能追赶检查第 ${catchUpCount + 1} 个周期:`, {
+                latestLastSummarized,
+                nextCycleStart,
+                nextCycleEnd,
+                maxAllowedIndex,
+                currentFloor
+            });
+
             // 检查是否还有需要追赶的周期
             if (nextCycleEnd > maxAllowedIndex) {
                 console.log('[MemoryUI] 已追赶到最新进度附近，等待新消息触发下一个周期', {
@@ -2086,10 +2094,14 @@ export class MemoryUI {
                 await this.performAutoSummarizeInRange(nextCycleStart, nextCycleEnd, interval, keepCount);
                 catchUpCount++;
 
+                // 保存进度
+                this.saveToChatMetadata('lastSummarizedFloor', nextCycleEnd + 1);
+
                 // 每次总结后稍作延迟，避免过快的连续操作
-                await new Promise(resolve => setTimeout(resolve, 200));
+                await new Promise(resolve => setTimeout(resolve, 1000)); // 增加到1秒，让UI有时间更新
             } catch (error) {
                 console.error('[MemoryUI] 智能追赶过程中出错:', error);
+                this.toastr?.error('智能追赶出错: ' + error.message);
                 break;
             }
         }
@@ -2115,69 +2127,85 @@ export class MemoryUI {
         try {
             console.log(`[MemoryUI] performAutoSummarizeInRange: 开始总结 ${startIndex}-${endIndex}`, { interval, keepCount });
 
-            // 导入必要的函数
-            const { getContext, extension_settings } = await import('../../../../../../extensions.js');
-            const { getMessages } = await import('../../utils/chatUtils.js');
-            const { extractTagContent } = await import('../../utils/tagExtractor.js');
+            // 设置标志，防止在追赶时再次触发追赶
+            this.isAutoSummarizing = true;
 
-            const settings = extension_settings.vectors_enhanced;
-            const context = getContext();
+            // 临时保存当前状态
+            const originalIsCatchingUp = this.isCatchingUp;
+            this.isCatchingUp = false;
 
-            // 获取要总结的消息
-            const messages = getMessages(context, startIndex, endIndex);
+            // 调用主总结方法，但传入特定的范围
+            await this.performSummarizeWithRange(startIndex, endIndex, keepCount);
 
-            if (messages.length === 0) {
-                console.log('[MemoryUI] performAutoSummarizeInRange: 没有需要总结的消息');
-                return;
-            }
+            // 恢复状态
+            this.isCatchingUp = originalIsCatchingUp;
 
-            // 构建总结内容
-            const chatContent = messages
-                .map(m => `${m.is_user ? '用户' : 'AI'}: ${m.mes}`)
-                .join('\n\n');
-
-            // 获取标签提取规则
-            const rules = settings.tag_extraction_rules || [];
-            let processedContent = chatContent;
-
-            if (rules.length > 0) {
-                processedContent = extractTagContent(chatContent, rules);
-            }
-
-            // 获取总结格式
-            const summaryFormat = settings.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
-            const detailLevel = settings.memory?.detailLevel || 'normal';
-            const maxLength = detailLevels[detailLevel]?.match(/\d+/)?.[0] || '150';
-
-            // 构建提示
-            const prompt = summaryFormat.replace('{{length}}', `每段不超过${maxLength}字`);
-
-            // 调用AI总结
-            const response = await this.generateRaw(processedContent, prompt, {
-                api_source: settings.memory?.source || 'google_openai',
-                model: settings.memory?.google_openai?.model || 'gemini-1.5-flash'
-            });
-
-            if (response && response.trim()) {
-                // 保存总结到输出框
-                $('#memory_output').val(response);
-
-                // 保存到聊天元数据
-                this.saveToChatMetadata('lastSummarizedFloor', endIndex + 1);
-
-                // 更新UI显示
-                this.updateAutoSummarizeStatus();
-
-                console.log(`[MemoryUI] 总结完成: 楼层 #${startIndex + 1} 至 #${endIndex + 1}`);
-            } else {
-                throw new Error('AI总结返回空内容');
-            }
+            console.log(`[MemoryUI] 总结完成: 楼层 #${startIndex + 1} 至 #${endIndex + 1}`);
 
         } catch (error) {
             console.error('[MemoryUI] performAutoSummarizeInRange 出错:', error);
             throw error;
         } finally {
+            this.isAutoSummarizing = false;
             this.isCatchingUp = false;
+        }
+    }
+
+    /**
+     * 执行指定范围的总结
+     */
+    async performSummarizeWithRange(startIndex, endIndex, keepCount) {
+        // 导入必要的函数
+        const { getContext, extension_settings } = await import('../../../../../../extensions.js');
+        const { getMessages } = await import('../../utils/chatUtils.js');
+        const { extractTagContent } = await import('../../utils/tagExtractor.js');
+
+        const settings = extension_settings.vectors_enhanced;
+        const context = getContext();
+
+        // 获取要总结的消息
+        const messages = getMessages(context, startIndex, endIndex);
+
+        if (messages.length === 0) {
+            console.log('[MemoryUI] performSummarizeWithRange: 没有需要总结的消息');
+            return;
+        }
+
+        // 构建总结内容
+        const chatContent = messages
+            .map(m => `${m.is_user ? '用户' : 'AI'}: ${m.mes}`)
+            .join('\n\n');
+
+        // 获取标签提取规则
+        const rules = settings.tag_extraction_rules || [];
+        let processedContent = chatContent;
+
+        if (rules.length > 0) {
+            processedContent = extractTagContent(chatContent, rules);
+        }
+
+        // 获取总结格式
+        const summaryFormat = settings.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
+        const detailLevel = settings.memory?.detailLevel || 'normal';
+        const maxLength = detailLevels[detailLevel]?.match(/\d+/)?.[0] || '150';
+
+        // 构建提示
+        const prompt = summaryFormat.replace('{{length}}', `每段不超过${maxLength}字`);
+
+        // 调用AI总结
+        const response = await this.generateRaw(processedContent, prompt, {
+            api_source: settings.memory?.source || 'google_openai',
+            model: settings.memory?.google_openai?.model || 'gemini-1.5-flash'
+        });
+
+        if (response && response.trim()) {
+            // 保存总结到输出框
+            $('#memory_output').val(response);
+
+            // 更新进度显示
+            this.hideLoading();
+        } else {
+            throw new Error('AI总结返回空内容');
         }
     }
 
