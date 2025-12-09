@@ -2023,35 +2023,24 @@ export class MemoryUI {
             console.error('[MemoryUI] 自动总结失败:', error);
             console.error('[MemoryUI] 错误堆栈:', error.stack);
             this.toastr?.error('自动总结失败: ' + error.message);
-            
+
             // 如果失败了，也要显示加载完成
             this.hideLoading();
-                    } finally {
-                        // 无论成功还是失败，都要清除标志
-                        this.isAutoSummarizing = false;
-                        console.log('[MemoryUI] 自动总结完成，清除并发标志');
-        
-                        // 智能追赶：如果还有"欠账"，自动再次触发检查
-                        // 确保在最后一步处理，且只在成功或特定情况下追赶
-                        if (result?.success && this.settings?.memory?.autoSummarize?.enabled) {
-                            await this.continueSmartCatchUp();
-                        }
-                    }
-                } catch (error) {
-                    console.error('[MemoryUI] 自动总结失败:', error);
-                    this.toastr?.error('自动总结失败: ' + error.message);
-                    this.hideLoading();
-                } finally {
-                    // 无论成功还是失败，都要清除标志
-                    this.isAutoSummarizing = false;
-                    console.log('[MemoryUI] 自动总结完成，清除并发标志');
-                }
-            }
-        } catch (error) {
-            console.error('[MemoryUI] 自动总结检查失败:', error);
-            // 如果检查过程出错，也要清除标志
+        } finally {
+            // 无论成功还是失败，都要清除标志
             this.isAutoSummarizing = false;
+            console.log('[MemoryUI] 自动总结完成，清除并发标志');
+
+            // 智能追赶：如果还有"欠账"，自动再次触发检查
+            // 确保在最后一步处理，且只在成功或特定情况下追赶
+            if (result?.success && this.settings?.memory?.autoSummarize?.enabled) {
+                await this.continueSmartCatchUp();
+            }
         }
+    } catch (error) {
+        console.error('[MemoryUI] 自动总结检查失败:', error);
+        // 如果检查过程出错，也要清除标志
+        this.isAutoSummarizing = false;
     }
 
     /**
