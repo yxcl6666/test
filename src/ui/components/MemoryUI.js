@@ -2071,18 +2071,28 @@ export class MemoryUI {
         const currentFloor = context.chat.length - 1;
         const maxAllowedIndex = currentFloor - keepCount;
 
+        // 计算总共需要追赶的批次
+        const latestLastSummarized = await this.getLastSummarizedFloor();
+        const remainingFloors = maxAllowedIndex - latestLastSummarized;
+        const totalBatches = Math.ceil(remainingFloors / interval);
+
+        // 显示追赶开始提示
+        if (totalBatches > 0) {
+            this.toastr?.info(`智能追赶启动：需要处理 ${totalBatches} 个批次（楼层 #${latestLastSummarized + 1} 至 #${maxAllowedIndex + 1}）`);
+        }
+
         let catchUpCount = 0;
         const maxCatchUpPerBatch = 10; // 限制单次最多追赶10个周期，避免无限循环
 
         while (catchUpCount < maxCatchUpPerBatch) {
-            const latestLastSummarized = await this.getLastSummarizedFloor();
+            const currentLastSummarized = await this.getLastSummarizedFloor();
 
             // 计算下一个周期应该开始的楼层
-            const nextCycleStart = latestLastSummarized;
+            const nextCycleStart = currentLastSummarized;
             const nextCycleEnd = nextCycleStart + interval - 1;
 
             console.log(`[MemoryUI] 智能追赶检查第 ${catchUpCount + 1} 个周期:`, {
-                latestLastSummarized,
+                currentLastSummarized,
                 nextCycleStart,
                 nextCycleEnd,
                 maxAllowedIndex,
@@ -2100,7 +2110,11 @@ export class MemoryUI {
                 break;
             }
 
-            console.log(`[MemoryUI] 智能追赶第 ${catchUpCount + 1} 个周期: 总结 ${nextCycleStart}-${nextCycleEnd}`);
+            // 显示当前批次提示
+            const currentBatch = catchUpCount + 1;
+            const remainingBatches = Math.ceil((maxAllowedIndex - nextCycleEnd - 1) / interval);
+
+            console.log(`[MemoryUI] 智能追赶第 ${currentBatch}/${totalBatches} 个周期: 总结 ${nextCycleStart}-${nextCycleEnd}`);
 
             // 执行总结
             try {
@@ -2111,11 +2125,16 @@ export class MemoryUI {
                 // 保存进度
                 this.saveToChatMetadata('lastSummarizedFloor', nextCycleEnd + 1);
 
+                // 显示批次完成提示
+                if (remainingBatches > 0) {
+                    this.toastr?.success(`批次 ${currentBatch} 完成，剩余 ${remainingBatches} 个批次`);
+                }
+
                 // 每次总结后稍作延迟，避免过快的连续操作
                 await new Promise(resolve => setTimeout(resolve, 1000)); // 增加到1秒，让UI有时间更新
             } catch (error) {
                 console.error('[MemoryUI] 智能追赶过程中出错:', error);
-                this.toastr?.error('智能追赶出错: ' + error.message);
+                this.toastr?.error(`批次 ${currentBatch} 失败: ${error.message}`);
                 break;
             }
         }
@@ -2123,8 +2142,10 @@ export class MemoryUI {
         // 更新状态显示
         this.updateAutoSummarizeStatus();
 
+        // 显示最终完成提示
         if (catchUpCount > 0) {
-            this.toastr?.info(`智能追赶完成：共总结了 ${catchUpCount} 个周期`);
+            const finalLastSummarized = await this.getLastSummarizedFloor();
+            this.toastr?.success(`智能追赶完成！共处理 ${catchUpCount} 个批次，已总结至楼层 #${finalLastSummarized}`);
         }
     }
 
@@ -2140,6 +2161,9 @@ export class MemoryUI {
 
         try {
             console.log(`[MemoryUI] performAutoSummarizeInRange: 开始总结 ${startIndex}-${endIndex}`, { interval, keepCount });
+
+            // 显示总结开始提示
+            this.toastr?.info(`智能追赶：正在总结楼层 #${startIndex + 1} 至 #${endIndex + 1}...`);
 
             // 调用主总结方法，但传入特定的范围
             const success = await this.performAutoSummarizeDirect(startIndex, endIndex, keepCount, true);
@@ -2211,11 +2235,11 @@ export class MemoryUI {
                     // 保存到输出框
                     $('#memory_output').val(response);
 
-                    // 调用后处理（创建世界书、隐藏楼层等）
-                    if ($('#memory_auto_create_world_book').prop('checked') || this.settings?.memory?.autoCreateWorldBook) {
+                    // 在追赶模式下，不在这里创建世界书，而是在追赶完成后统一处理
+                    if (!isCatchUp && ($('#memory_auto_create_world_book').prop('checked') || this.settings?.memory?.autoCreateWorldBook)) {
                         await this.memoryService.createWorldBook(true, {
-                            startFloor: startIndex,
-                            endFloor: endIndex,
+                            start: startIndex + 1,  // 转换为1基索引
+                            end: endIndex + 1,      // 转换为1基索引
                             count: endIndex - startIndex + 1
                         });
                     }
