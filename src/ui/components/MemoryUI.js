@@ -24,6 +24,15 @@ const defaultMemorySettings = {
     source: 'google_openai', // 默认使用Google
     detailLevel: 'normal', // 默认详细程度
     maxTokens: 8192, // 默认最大token数
+    // 添加默认模型配置
+    models: {
+        openai_compatible: {
+            deepseek: 'deepseek-chat',
+            openai: 'gpt-3.5-turbo',
+            anthropic: 'claude-3-sonnet-20241022',
+            cohere: 'command-r-plus'
+        }
+    },
     summaryFormat: `总结应当遵循以下原则：
 - 按时间顺序或逻辑顺序组织信息
 - 保留关键事件和重要细节，省略冗余描述
@@ -869,10 +878,27 @@ export class MemoryUI {
 
         switch(source) {
             case 'openai_compatible':
+                const url = $('#memory_openai_url').val();
+                const savedModel = $('#memory_openai_model').val();
+                let autoModel = '';
+
+                // 根据URL自动选择合适的模型
+                if (url && !savedModel) {
+                    if (url.includes('deepseek.com')) {
+                        autoModel = 'deepseek-chat';
+                    } else if (url.includes('openai.com')) {
+                        autoModel = 'gpt-3.5-turbo';
+                    } else if (url.includes('anthropic.com')) {
+                        autoModel = 'claude-3-sonnet-20241022';
+                    } else if (url.includes('cohere.com')) {
+                        autoModel = 'command-r-plus';
+                    }
+                }
+
                 return {
-                    url: $('#memory_openai_url').val(),
+                    url: url,
                     apiKey: $('#memory_openai_api_key').val(),
-                    model: $('#memory_openai_model').val() || '',
+                    model: savedModel || autoModel,
                     proxyMode: $('#memory_openai_proxy_mode').prop('checked') || false
                 };
             case 'google_openai':

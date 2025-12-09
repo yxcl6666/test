@@ -319,12 +319,24 @@ export class MemoryService {
                 Object.assign(headers, standardHeaders);
             }
             
+            // 根据API端点自动选择合适的默认模型
+            let defaultModel = 'gpt-3.5-turbo';
+            if (url.includes('deepseek.com')) {
+                defaultModel = 'deepseek-chat';
+            } else if (url.includes('openai.com')) {
+                defaultModel = 'gpt-3.5-turbo';
+            } else if (url.includes('anthropic.com')) {
+                defaultModel = 'claude-3-sonnet-20241022';
+            } else if (url.includes('cohere.com')) {
+                defaultModel = 'command-r-plus';
+            }
+
             const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify({
                     messages: messages,
-                    model: model || 'gpt-3.5-turbo',
+                    model: model || defaultModel,
                     temperature: 1,
                     max_tokens: maxTokens,
                     stream: false
