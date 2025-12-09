@@ -4,7 +4,7 @@
  */
 
 // Import updateWorldInfoList functions
-import { updateWorldInfoList as updateSillyTavernWorldInfoList, loadWorldInfo, METADATA_KEY, world_info } from '../../../../../../world-info.js';
+import { updateWorldInfoList as updateSillyTavernWorldInfoList, loadWorldInfo, METADATA_KEY, getSortedEntries } from '../../../../../../world-info.js';
 import { updateWorldInfoList as updatePluginWorldInfoList } from './WorldInfoList.js';
 import { getContext, extension_settings } from '../../../../../../extensions.js';
 import { chat_metadata, saveChatDebounced, saveMetadata } from '../../../../../../../script.js';
@@ -201,43 +201,7 @@ export class MemoryUI {
             }
         }
 
-        // 5. 从 SillyTavern 的 world_info 获取当前选中的世界书
-        if (!chatWorld && typeof selected_world_info !== 'undefined') {
-            chatWorld = selected_world_info;
-            console.log(`[MemoryUI] getBoundWorldBook: 从 selected_world_info 获取到世界书: ${chatWorld}`);
-        }
-
-        // 6. 如果还是没有，尝试使用第一个可用的世界书
-        if (!chatWorld && world_info && world_info.world_items) {
-            const worldBooks = Object.keys(world_info.world_items);
-            console.log(`[MemoryUI] getBoundWorldBook: 可用的世界书列表:`, worldBooks);
-
-            // 优先查找包含楼层信息的特定世界书
-            const targetWorldBook = worldBooks.find(name =>
-                name.includes('我的青春恋爱物语没有问题') &&
-                name.includes('251202') &&
-                name.includes('1725')
-            );
-
-            if (targetWorldBook) {
-                chatWorld = targetWorldBook;
-                console.log(`[MemoryUI] getBoundWorldBook: 找到匹配的楼层世界书: ${chatWorld}`);
-            } else if (worldBooks.length > 0) {
-                chatWorld = worldBooks[0];
-                console.log(`[MemoryUI] getBoundWorldBook: 没有找到匹配的世界书，使用第一个可用世界书: ${chatWorld}`);
-            }
-
-            if (chatWorld) {
-                console.log(`[MemoryUI] getBoundWorldBook: 准备自动绑定世界书: ${chatWorld}`);
-                // 自动绑定这个世界书
-                this.bindWorldBook(chatWorld);
-            }
-        } else {
-            console.log(`[MemoryUI] getBoundWorldBook: world_info 存在: ${!!world_info}`);
-            if (world_info) {
-                console.log(`[MemoryUI] getBoundWorldBook: world_info.world_items 存在: ${!!world_info.world_items}`);
-            }
-        }
+        // 注意：自动绑定现在在 ensureWorldBookBound 中处理，这里只是返回已绑定的世界书
 
         return chatWorld;
     }
@@ -1439,14 +1403,23 @@ export class MemoryUI {
             // 尝试从世界书获取历史总结
             let chatWorld = this.getBoundWorldBook();
 
-            // 如果没有绑定的世界书，尝试使用当前选中的世界书
-            if (!chatWorld && typeof world_info !== 'undefined' && world_info.world_items) {
-                // 获取所有可用的世界书列表
-                const worldBooks = Object.keys(world_info.world_items);
+            // 如果没有绑定的世界书，尝试自动绑定
+            if (!chatWorld) {
+                const worldBooks = await this.getAvailableWorldBooks();
                 if (worldBooks.length > 0) {
-                    // 使用第一个世界书作为默认选择
-                    chatWorld = worldBooks[0];
-                    console.log(`[MemoryUI] getSmartLastSummarizedFloor: 没有绑定的世界书，使用默认世界书: ${chatWorld}`);
+                    // 优先查找包含楼层信息的特定世界书
+                    const targetWorldBook = worldBooks.find(name =>
+                        name.includes('我的青春恋爱物语没有问题') &&
+                        (name.includes('251202') || name.includes('1725'))
+                    );
+
+                    if (targetWorldBook) {
+                        chatWorld = targetWorldBook;
+                        console.log(`[MemoryUI] getSmartLastSummarizedFloor: 找到匹配的楼层世界书: ${chatWorld}`);
+                    } else {
+                        chatWorld = worldBooks[0];
+                        console.log(`[MemoryUI] getSmartLastSummarizedFloor: 使用第一个可用世界书: ${chatWorld}`);
+                    }
 
                     // 自动绑定这个世界书
                     this.bindWorldBook(chatWorld);
@@ -1508,13 +1481,35 @@ export class MemoryUI {
     }
 
     /**
+     * 获取所有可用的世界书列表
+     */
+    async getAvailableWorldBooks() {
+        try {
+            const entries = await getSortedEntries();
+            const worldBooks = new Set();
+
+            entries.forEach(entry => {
+                if (entry.world && !entry.disable) {
+                    worldBooks.add(entry.world);
+                }
+            });
+
+            console.log('[MemoryUI] getAvailableWorldBooks: 可用的世界书:', Array.from(worldBooks));
+            return Array.from(worldBooks);
+        } catch (error) {
+            console.error('[MemoryUI] getAvailableWorldBooks: 获取世界书列表失败:', error);
+            return [];
+        }
+    }
+
+    /**
      * 确保有绑定的世界书
      */
-    ensureWorldBookBound() {
+    async ensureWorldBookBound() {
         let chatWorld = this.getBoundWorldBook();
 
-        if (!chatWorld && world_info && world_info.world_items) {
-            const worldBooks = Object.keys(world_info.world_items);
+        if (!chatWorld) {
+            const worldBooks = await this.getAvailableWorldBooks();
             console.log('[MemoryUI] ensureWorldBookBound: 可用的世界书列表:', worldBooks);
 
             if (worldBooks.length > 0) {
