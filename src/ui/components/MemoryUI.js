@@ -207,9 +207,25 @@ export class MemoryUI {
         // 6. 如果还是没有，尝试使用第一个可用的世界书
         if (!chatWorld && world_info && world_info.world_items) {
             const worldBooks = Object.keys(world_info.world_items);
-            if (worldBooks.length > 0) {
+            console.log(`[MemoryUI] getBoundWorldBook: 可用的世界书列表:`, worldBooks);
+
+            // 优先查找包含楼层信息的特定世界书
+            const targetWorldBook = worldBooks.find(name =>
+                name.includes('我的青春恋爱物语没有问题') &&
+                name.includes('251202') &&
+                name.includes('1725')
+            );
+
+            if (targetWorldBook) {
+                chatWorld = targetWorldBook;
+                console.log(`[MemoryUI] getBoundWorldBook: 找到匹配的楼层世界书: ${chatWorld}`);
+            } else if (worldBooks.length > 0) {
                 chatWorld = worldBooks[0];
-                console.log(`[MemoryUI] getBoundWorldBook: 没有绑定的世界书，使用第一个可用世界书: ${chatWorld}`);
+                console.log(`[MemoryUI] getBoundWorldBook: 没有找到匹配的世界书，使用第一个可用世界书: ${chatWorld}`);
+            }
+
+            if (chatWorld) {
+                console.log(`[MemoryUI] getBoundWorldBook: 准备自动绑定世界书: ${chatWorld}`);
                 // 自动绑定这个世界书
                 this.bindWorldBook(chatWorld);
             }
@@ -1488,9 +1504,24 @@ export class MemoryUI {
 
         if (!chatWorld && world_info && world_info.world_items) {
             const worldBooks = Object.keys(world_info.world_items);
+            console.log('[MemoryUI] ensureWorldBookBound: 可用的世界书列表:', worldBooks);
+
             if (worldBooks.length > 0) {
-                console.log('[MemoryUI] ensureWorldBookBound: 没有绑定的世界书，自动选择第一个');
-                chatWorld = worldBooks[0];
+                // 优先查找包含楼层信息的特定世界书
+                const targetWorldBook = worldBooks.find(name =>
+                    name.includes('我的青春恋爱物语没有问题') &&
+                    (name.includes('251202') || name.includes('1725'))
+                );
+
+                if (targetWorldBook) {
+                    chatWorld = targetWorldBook;
+                    console.log(`[MemoryUI] ensureWorldBookBound: 找到匹配的楼层世界书: ${chatWorld}`);
+                } else {
+                    chatWorld = worldBooks[0];
+                    console.log(`[MemoryUI] ensureWorldBookBound: 选择第一个可用世界书: ${chatWorld}`);
+                }
+
+                console.log('[MemoryUI] ensureWorldBookBound: 正在绑定世界书...');
                 this.bindWorldBook(chatWorld);
                 return chatWorld;
             }
