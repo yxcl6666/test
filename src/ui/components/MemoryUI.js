@@ -1960,14 +1960,20 @@ export class MemoryUI {
             // 执行总结
             console.log('[MemoryUI] 调用memoryService.sendMessage前');
             const maxTokens = parseInt($('#memory_max_tokens').val()) || this.settings.memory?.maxTokens || defaultMemorySettings.maxTokens;
-            const result = await this.memoryService.sendMessage(contentWithHeader, {
-                apiSource: apiSource,
-                apiConfig: apiConfig,
-                summaryFormat: summaryFormat,
-                maxTokens: maxTokens
-            });
+            let result = { success: false }; // 初始化result，确保在finally块中可用
+            try {
+                result = await this.memoryService.sendMessage(contentWithHeader, {
+                    apiSource: apiSource,
+                    apiConfig: apiConfig,
+                    summaryFormat: summaryFormat,
+                    maxTokens: maxTokens
+                });
+            } catch (apiError) {
+                console.error('[MemoryUI] API调用失败:', apiError);
+                result = { success: false, error: apiError.message };
+            }
             console.log('[MemoryUI] memoryService.sendMessage返回:', result);
-            
+
             if (result && result.success) {
                 // 检查响应内容是否有效
                 const response = result.response || '';
