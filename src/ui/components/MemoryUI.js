@@ -167,6 +167,9 @@ export class MemoryUI {
         // 尝试从不同位置获取世界书信息
         let chatWorld = null;
 
+        console.log('[MemoryUI] getBoundWorldBook: 开始获取世界书...');
+        console.log(`[MemoryUI] getBoundWorldBook: METADATA_KEY = "${METADATA_KEY}"`);
+
         // 1. 从全局设置获取
         if (this.settings?.worldBook) {
             chatWorld = this.settings.worldBook;
@@ -229,6 +232,11 @@ export class MemoryUI {
                 // 自动绑定这个世界书
                 this.bindWorldBook(chatWorld);
             }
+        } else {
+            console.log(`[MemoryUI] getBoundWorldBook: world_info 存在: ${!!world_info}`);
+            if (world_info) {
+                console.log(`[MemoryUI] getBoundWorldBook: world_info.world_items 存在: ${!!world_info.world_items}`);
+            }
         }
 
         return chatWorld;
@@ -262,8 +270,11 @@ export class MemoryUI {
             // 如果没有绑定世界书，尝试自动绑定
             if (!chatWorld && (syncEnabled || forceSync)) {
                 console.log('[MemoryUI] getLastSummarizedFloor: 没有绑定世界书，尝试自动绑定...');
+                console.log(`[MemoryUI] getLastSummarizedFloor: syncEnabled=${syncEnabled}, forceSync=${forceSync}`);
                 chatWorld = this.ensureWorldBookBound();
                 console.log(`[MemoryUI] getLastSummarizedFloor: 自动绑定后的 chatWorld: ${chatWorld}`);
+            } else {
+                console.log(`[MemoryUI] getLastSummarizedFloor: 跳过自动绑定 - chatWorld=${chatWorld}, syncEnabled=${syncEnabled}, forceSync=${forceSync}`);
             }
 
             if (!chatWorld) {
