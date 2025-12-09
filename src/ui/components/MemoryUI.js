@@ -213,8 +213,26 @@ export class MemoryUI {
      */
     async getLastSummarizedFloor(forceSync = false) {
         // 1. 获取 Metadata 中的值
-        let lastSummarized = this.getFromChatMetadata('lastSummarizedFloor') ?? 0;
-        console.log(`[MemoryUI] getLastSummarizedFloor: 初始 lastSummarized (from metadata): ${lastSummarized}`);
+        let lastSummarized = this.getFromChatMetadata('lastSummarizedFloor');
+
+        // 如果没有值，默认从0开始
+        if (lastSummarized === undefined || lastSummarized === null) {
+            lastSummarized = 0;
+            console.log(`[MemoryUI] getLastSummarizedFloor: 没有历史记录，从0开始`);
+        } else {
+            // 检查值是否合理（不能超过当前聊天楼层数）
+            const context = this.getContext ? this.getContext() : window.getContext?.();
+            const currentFloor = context?.chat?.length - 1 || 0;
+
+            // 如果记录的值超过了当前楼层数，重置为0
+            if (lastSummarized > currentFloor) {
+                console.warn(`[MemoryUI] lastSummarizedFloor (${lastSummarized}) 超过了当前楼层数 (${currentFloor})，重置为0`);
+                lastSummarized = 0;
+                this.saveToChatMetadata('lastSummarizedFloor', 0);
+            } else {
+                console.log(`[MemoryUI] getLastSummarizedFloor: 从 metadata 获取到 lastSummarized: ${lastSummarized}`);
+            }
+        }
 
         // 2. 检查是否开启了同步世界书选项
         const syncEnabled = $('#memory_auto_sync_world_info').prop('checked') ||
@@ -1441,13 +1459,13 @@ export class MemoryUI {
             }
 
             if (!chatWorld) {
-                console.log('[MemoryUI] getSmartLastSummarizedFloor: 没有可用的世界书');
+                console.log('[MemoryUI] getSmartLastSummarizedFloor: 没有可用的世界书，从0开始');
                 return 0;
             }
 
             const worldData = await loadWorldInfo(chatWorld);
             if (!worldData || !worldData.entries) {
-                console.log('[MemoryUI] getSmartLastSummarizedFloor: 无法加载世界书数据');
+                console.log('[MemoryUI] getSmartLastSummarizedFloor: 无法加载世界书数据，从0开始');
                 return 0;
             }
 
@@ -1467,7 +1485,7 @@ export class MemoryUI {
             });
 
             if (summaryRanges.length === 0) {
-                console.log('[MemoryUI] getSmartLastSummarizedFloor: 世界书中没有找到楼层总结记录');
+                console.log('[MemoryUI] getSmartLastSummarizedFloor: 世界书中没有找到楼层总结记录，从0开始');
                 return 0;
             }
 
