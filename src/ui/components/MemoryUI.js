@@ -2133,86 +2133,131 @@ export class MemoryUI {
         try {
             console.log(`[MemoryUI] performAutoSummarizeInRange: 开始总结 ${startIndex}-${endIndex}`, { interval, keepCount });
 
-            // 设置标志，防止在追赶时再次触发追赶
-            this.isAutoSummarizing = true;
-
-            // 临时保存当前状态
-            const originalIsCatchingUp = this.isCatchingUp;
-            this.isCatchingUp = false;
-
             // 调用主总结方法，但传入特定的范围
-            await this.performSummarizeWithRange(startIndex, endIndex, keepCount);
+            const success = await this.performAutoSummarizeDirect(startIndex, endIndex, keepCount, true);
 
-            // 恢复状态
-            this.isCatchingUp = originalIsCatchingUp;
-
-            console.log(`[MemoryUI] 总结完成: 楼层 #${startIndex + 1} 至 #${endIndex + 1}`);
+            if (success) {
+                console.log(`[MemoryUI] 总结完成: 楼层 #${startIndex + 1} 至 #${endIndex + 1}`);
+            }
 
         } catch (error) {
             console.error('[MemoryUI] performAutoSummarizeInRange 出错:', error);
             throw error;
         } finally {
-            this.isAutoSummarizing = false;
             this.isCatchingUp = false;
         }
     }
 
     /**
-     * 执行指定范围的总结
+     * 直接执行指定范围的总结（简化版，避免循环）
      */
-    async performSummarizeWithRange(startIndex, endIndex, keepCount) {
-        // 导入必要的函数
-        const { getContext, extension_settings } = await import('../../../../../../extensions.js');
-        const { getMessages } = await import('../../utils/chatUtils.js');
-        const { extractTagContent } = await import('../../utils/tagExtractor.js');
+    async performAutoSummarizeDirect(startIndex, endIndex, keepCount, isCatchUp = false) {
+        try {
+            // 显示加载状态
+            if (!isCatchUp) {
+                this.showLoading();
+            }
 
-        const settings = extension_settings.vectors_enhanced;
-        const context = getContext();
+            // 导入必要的函数
+            const { getContext, extension_settings } = await import('../../../../../../extensions.js');
+            const { getMessages } = await import('../../utils/chatUtils.js');
+            const { extractTagContent } = await import('../../utils/tagExtractor.js');
+            const settings = extension_settings.vectors_enhanced;
+            const context = getContext();
 
-        // 获取要总结的消息
-        const messages = getMessages(context, startIndex, endIndex);
+            // 构建内容
+            const content = this.buildSummaryContent(context, startIndex, endIndex);
 
-        if (messages.length === 0) {
-            console.log('[MemoryUI] performSummarizeWithRange: 没有需要总结的消息');
-            return;
+            // 获取API配置
+            const apiSource = $('#memory_api_source').val() || this.settings?.memory?.source || 'google_openai';
+            let apiConfig;
+
+            if (apiSource === 'google_openai') {
+                apiConfig = {
+                    apiKey: $('#memory_google_openai_api_key').val() || this.settings?.memory?.google_openai?.apiKey
+                };
+            } else if (apiSource === 'openai_compatible') {
+                apiConfig = {
+                    url: $('#memory_openai_url').val() || this.settings?.memory?.openai_compatible?.url,
+                    apiKey: $('#memory_openai_api_key').val() || this.settings?.memory?.openai_compatible?.apiKey,
+                    proxyMode: $('#memory_openai_proxy_mode').prop('checked') || this.settings?.memory?.openai_compatible?.proxyMode
+                };
+            }
+
+            // 执行总结
+            const maxTokens = parseInt($('#memory_max_tokens').val()) || this.settings.memory?.maxTokens || defaultMemorySettings.maxTokens;
+            let result = { success: false };
+
+            try {
+                result = await this.memoryService.sendMessage(content, {
+                    apiSource,
+                    apiConfig,
+                    summaryFormat: this.settings?.memory?.summaryFormat || defaultMemorySettings.summaryFormat,
+                    maxTokens
+                });
+            } catch (error) {
+                console.error('[MemoryUI] API调用失败:', error);
+                result = { success: false, error: error.message };
+            }
+
+            if (result && result.success) {
+                const response = result.response || '';
+
+                if (response && response.trim().length >= 2) {
+                    // 保存到输出框
+                    $('#memory_output').val(response);
+
+                    // 调用后处理（创建世界书、隐藏楼层等）
+                    if ($('#memory_auto_create_world_book').prop('checked') || this.settings?.memory?.autoCreateWorldBook) {
+                        await this.memoryService.createWorldBook(true, {
+                            startFloor: startIndex,
+                            endFloor: endIndex,
+                            count: endIndex - startIndex + 1
+                        });
+                    }
+
+                    // 隐藏楼层
+                    if ($('#memory_hide_floors_after_summary').prop('checked') || this.settings.memory?.hideFloorsAfterSummary) {
+                        await this.hideFloorsIfEnabled(startIndex, endIndex, true);
+                    }
+
+                    // 隐藏世界书条目
+                    if ($('#memory_disable_world_info_after_vectorize').prop('checked') || this.settings?.memory?.disableWorldInfoAfterVectorize) {
+                        // 这里可以添加禁用逻辑
+                    }
+
+                    return true;
+                }
+            }
+
+            return false;
+
+        } catch (error) {
+            console.error('[MemoryUI] performAutoSummarizeDirect 失败:', error);
+            return false;
+        } finally {
+            if (!isCatchUp) {
+                this.hideLoading();
+            }
+        }
+      }
+
+    /**
+     * 构建总结内容
+     */
+    buildSummaryContent(context, startIndex, endIndex) {
+        const messages = context.chat || [];
+
+        let content = '';
+        for (let i = startIndex; i <= endIndex && i < messages.length; i++) {
+            const msg = messages[i];
+            if (msg && msg.mes && !msg.is_system) {
+                const prefix = msg.is_user ? '用户' : 'AI';
+                content += `${prefix}: ${msg.mes}\n\n`;
+            }
         }
 
-        // 构建总结内容
-        const chatContent = messages
-            .map(m => `${m.is_user ? '用户' : 'AI'}: ${m.mes}`)
-            .join('\n\n');
-
-        // 获取标签提取规则
-        const rules = settings.tag_extraction_rules || [];
-        let processedContent = chatContent;
-
-        if (rules.length > 0) {
-            processedContent = extractTagContent(chatContent, rules);
-        }
-
-        // 获取总结格式
-        const summaryFormat = settings.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
-        const detailLevel = settings.memory?.detailLevel || 'normal';
-        const maxLength = detailLevels[detailLevel]?.match(/\d+/)?.[0] || '150';
-
-        // 构建提示
-        const prompt = summaryFormat.replace('{{length}}', `每段不超过${maxLength}字`);
-
-        // 调用AI总结
-        const response = await this.generateRaw(processedContent, prompt, {
-            api_source: settings.memory?.source || 'google_openai',
-            model: settings.memory?.google_openai?.model || 'gemini-1.5-flash'
-        });
-
-        if (response && response.trim()) {
-            // 保存总结到输出框
-            $('#memory_output').val(response);
-
-            // 更新进度显示
-            this.hideLoading();
-        } else {
-            throw new Error('AI总结返回空内容');
-        }
+        return content;
     }
 
     /**
