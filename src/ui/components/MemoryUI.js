@@ -1960,7 +1960,10 @@ export class MemoryUI {
             // 执行总结
             console.log('[MemoryUI] 调用memoryService.sendMessage前');
             const maxTokens = parseInt($('#memory_max_tokens').val()) || this.settings.memory?.maxTokens || defaultMemorySettings.maxTokens;
-            let result = { success: false }; // 初始化result，确保在finally块中可用
+
+            // 在try块外部初始化result，确保在finally块中可用
+            let result = { success: false, response: '' };
+
             try {
                 result = await this.memoryService.sendMessage(contentWithHeader, {
                     apiSource: apiSource,
@@ -1970,7 +1973,7 @@ export class MemoryUI {
                 });
             } catch (apiError) {
                 console.error('[MemoryUI] API调用失败:', apiError);
-                result = { success: false, error: apiError.message };
+                result = { success: false, error: apiError.message, response: '' };
             }
             console.log('[MemoryUI] memoryService.sendMessage返回:', result);
 
@@ -2039,8 +2042,13 @@ export class MemoryUI {
 
             // 智能追赶：如果还有"欠账"，自动再次触发检查
             // 确保在最后一步处理，且只在成功或特定情况下追赶
-            if (result?.success && this.settings?.memory?.autoSummarize?.enabled) {
-                await this.continueSmartCatchUp();
+            if (result?.success) {
+                // 检查是否启用了自动总结
+                const autoSummarizeEnabled = $('#memory_auto_summarize').prop('checked') ||
+                                            this.settings?.memory?.autoSummarize?.enabled || false;
+                if (autoSummarizeEnabled) {
+                    await this.continueSmartCatchUp();
+                }
             }
         }
     } catch (error) {
