@@ -2235,8 +2235,8 @@ export class MemoryUI {
                     // 保存到输出框
                     $('#memory_output').val(response);
 
-                    // 在追赶模式下，不在这里创建世界书，而是在追赶完成后统一处理
-                    if (!isCatchUp && ($('#memory_auto_create_world_book').prop('checked') || this.settings?.memory?.autoCreateWorldBook)) {
+                    // 追赶模式下也应该创建世界书，确保每次总结后都有对应的记录
+                    if ($('#memory_auto_create_world_book').prop('checked') || this.settings?.memory?.autoCreateWorldBook) {
                         await this.memoryService.createWorldBook(true, {
                             start: startIndex + 1,  // 转换为1基索引
                             end: endIndex + 1,      // 转换为1基索引
