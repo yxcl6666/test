@@ -1389,9 +1389,9 @@ export class MemoryUI {
                 $('#memory_next_auto_summarize_floor').text(`#${nextFloor + 1}`);
                 return;
             } else {
-                console.log('[MemoryUI] updateAutoSummarizeStatus: 未找到历史总结，初始化为当前楼层', currentFloor);
-                this.saveToChatMetadata('lastSummarizedFloor', currentFloor);
-                const nextFloor = currentFloor + interval;
+                console.log('[MemoryUI] updateAutoSummarizeStatus: 未找到历史总结，保持从0开始');
+                // 不需要保存，lastSummarizedFloor已经是0了
+                const nextFloor = interval - 1; // 总结0到第interval-1层
                 $('#memory_next_auto_summarize_floor').text(`#${nextFloor + 1}`);
                 return;
             }
