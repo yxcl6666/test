@@ -2060,7 +2060,11 @@ export class MemoryUI {
     async continueSmartCatchUp() {
         const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
         const keepCount = parseInt($('#memory_auto_summarize_count').val()) || 6;
-        const context = getContext();
+        const context = this.getContext ? this.getContext() : window.getContext?.();
+        if (!context || !context.chat) {
+            console.error('[MemoryUI] continueSmartCatchUp: 无法获取聊天上下文');
+            return;
+        }
         const currentFloor = context.chat.length - 1;
         const maxAllowedIndex = currentFloor - keepCount;
 
