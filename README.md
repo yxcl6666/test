@@ -1,4 +1,4 @@
-# 源自于https://github.com/RaphllA/vectors-enhanced ，用于添加一些自定义功能
+# 本项目是基于 [聊天记录超级管理器](https://github.com/RaphllA/vectors-enhanced) 开发的修改版，原作者是 [RaphllA]。本仓库仅用于个人测试和功能扩展。
 
 # Vectors Enhanced - SillyTavern 高级向量化扩展
 
