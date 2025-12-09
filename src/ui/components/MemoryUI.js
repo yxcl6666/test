@@ -2031,28 +2031,162 @@ export class MemoryUI {
                         this.isAutoSummarizing = false;
                         console.log('[MemoryUI] 自动总结完成，清除并发标志');
         
-                        // 智能追赶：如果还有“欠账”，自动再次触发检查
+                        // 智能追赶：如果还有"欠账"，自动再次触发检查
                         // 确保在最后一步处理，且只在成功或特定情况下追赶
                         if (result?.success && this.settings?.memory?.autoSummarize?.enabled) {
-                            const latestLastSummarized = await this.getLastSummarizedFloor(); // 获取最新的已总结楼层
-                            const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
-                            const keepCount = parseInt($('#memory_auto_summarize_count').val()) || 6;
-                            const context = getContext();
-                            const currentFloor = context.chat.length - 1;
-                            const maxAllowedIndex = currentFloor - keepCount;
-        
-                            // 计算下一个周期应该开始的楼层
-                            const nextCycleStart = latestLastSummarized; // 因为 latestLastSummarized 已经是 nextStartIndex
-                            const nextCycleEnd = nextCycleStart + interval - 1;
-        
-                            if (nextCycleEnd <= maxAllowedIndex) {
-                                console.log('[MemoryUI] 检测到还有未总结的周期，将在短时间后继续追赶...', { nextCycleStart, nextCycleEnd, maxAllowedIndex });
-                                setTimeout(() => this.checkAutoSummarize(), 500); // 稍作延迟再次检查
-                            } else {
-                                console.log('[MemoryUI] 已追赶到最新进度附近，等待新消息触发下一个周期');
-                            }
+                            await this.continueSmartCatchUp();
                         }
-                    }    }
+                    }
+                } catch (error) {
+                    console.error('[MemoryUI] 自动总结失败:', error);
+                    this.toastr?.error('自动总结失败: ' + error.message);
+                    this.hideLoading();
+                } finally {
+                    // 无论成功还是失败，都要清除标志
+                    this.isAutoSummarizing = false;
+                    console.log('[MemoryUI] 自动总结完成，清除并发标志');
+                }
+            }
+        } catch (error) {
+            console.error('[MemoryUI] 自动总结检查失败:', error);
+            // 如果检查过程出错，也要清除标志
+            this.isAutoSummarizing = false;
+        }
+    }
+
+    /**
+     * 智能追赶：持续检查并总结未完成的周期
+     */
+    async continueSmartCatchUp() {
+        const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
+        const keepCount = parseInt($('#memory_auto_summarize_count').val()) || 6;
+        const context = getContext();
+        const currentFloor = context.chat.length - 1;
+        const maxAllowedIndex = currentFloor - keepCount;
+
+        let catchUpCount = 0;
+        const maxCatchUpPerBatch = 10; // 限制单次最多追赶10个周期，避免无限循环
+
+        while (catchUpCount < maxCatchUpPerBatch) {
+            const latestLastSummarized = await this.getLastSummarizedFloor();
+
+            // 计算下一个周期应该开始的楼层
+            const nextCycleStart = latestLastSummarized;
+            const nextCycleEnd = nextCycleStart + interval - 1;
+
+            // 检查是否还有需要追赶的周期
+            if (nextCycleEnd > maxAllowedIndex) {
+                console.log('[MemoryUI] 已追赶到最新进度附近，等待新消息触发下一个周期', {
+                    nextCycleStart,
+                    nextCycleEnd,
+                    maxAllowedIndex,
+                    catchUpCount
+                });
+                break;
+            }
+
+            console.log(`[MemoryUI] 智能追赶第 ${catchUpCount + 1} 个周期: 总结 ${nextCycleStart}-${nextCycleEnd}`);
+
+            // 执行总结
+            try {
+                // 调用 performAutoSummarize 但传入特定的范围
+                await this.performAutoSummarizeInRange(nextCycleStart, nextCycleEnd, interval, keepCount);
+                catchUpCount++;
+
+                // 每次总结后稍作延迟，避免过快的连续操作
+                await new Promise(resolve => setTimeout(resolve, 200));
+            } catch (error) {
+                console.error('[MemoryUI] 智能追赶过程中出错:', error);
+                break;
+            }
+        }
+
+        // 更新状态显示
+        this.updateAutoSummarizeStatus();
+
+        if (catchUpCount > 0) {
+            this.toastr?.info(`智能追赶完成：共总结了 ${catchUpCount} 个周期`);
+        }
+    }
+
+    /**
+     * 为指定范围执行自动总结（不触发追赶）
+     */
+    async performAutoSummarizeInRange(startIndex, endIndex, interval, keepCount) {
+        // 防止递归调用
+        if (this.isCatchingUp) {
+            return;
+        }
+        this.isCatchingUp = true;
+
+        try {
+            console.log(`[MemoryUI] performAutoSummarizeInRange: 开始总结 ${startIndex}-${endIndex}`, { interval, keepCount });
+
+            // 导入必要的函数
+            const { getContext, extension_settings } = await import('../../../../../../extensions.js');
+            const { getMessages } = await import('../../utils/chatUtils.js');
+            const { extractTagContent } = await import('../../utils/tagExtractor.js');
+
+            const settings = extension_settings.vectors_enhanced;
+            const context = getContext();
+
+            // 获取要总结的消息
+            const messages = getMessages(context, startIndex, endIndex);
+
+            if (messages.length === 0) {
+                console.log('[MemoryUI] performAutoSummarizeInRange: 没有需要总结的消息');
+                return;
+            }
+
+            // 构建总结内容
+            const chatContent = messages
+                .map(m => `${m.is_user ? '用户' : 'AI'}: ${m.mes}`)
+                .join('\n\n');
+
+            // 获取标签提取规则
+            const rules = settings.tag_extraction_rules || [];
+            let processedContent = chatContent;
+
+            if (rules.length > 0) {
+                processedContent = extractTagContent(chatContent, rules);
+            }
+
+            // 获取总结格式
+            const summaryFormat = settings.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
+            const detailLevel = settings.memory?.detailLevel || 'normal';
+            const maxLength = detailLevels[detailLevel]?.match(/\d+/)?.[0] || '150';
+
+            // 构建提示
+            const prompt = summaryFormat.replace('{{length}}', `每段不超过${maxLength}字`);
+
+            // 调用AI总结
+            const response = await this.generateRaw(processedContent, prompt, {
+                api_source: settings.memory?.source || 'google_openai',
+                model: settings.memory?.google_openai?.model || 'gemini-1.5-flash'
+            });
+
+            if (response && response.trim()) {
+                // 保存总结到输出框
+                $('#memory_output').val(response);
+
+                // 保存到聊天元数据
+                this.saveToChatMetadata('lastSummarizedFloor', endIndex + 1);
+
+                // 更新UI显示
+                this.updateAutoSummarizeStatus();
+
+                console.log(`[MemoryUI] 总结完成: 楼层 #${startIndex + 1} 至 #${endIndex + 1}`);
+            } else {
+                throw new Error('AI总结返回空内容');
+            }
+
+        } catch (error) {
+            console.error('[MemoryUI] performAutoSummarizeInRange 出错:', error);
+            throw error;
+        } finally {
+            this.isCatchingUp = false;
+        }
+    }
 
     /**
      * Hide floors if enabled in settings
