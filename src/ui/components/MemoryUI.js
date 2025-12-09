@@ -4,10 +4,10 @@
  */
 
 // Import updateWorldInfoList functions
-import { updateWorldInfoList as updateSillyTavernWorldInfoList, loadWorldInfo, METADATA_KEY } from '../../../../../../world-info.js';
+import { updateWorldInfoList as updateSillyTavernWorldInfoList, loadWorldInfo, METADATA_KEY, world_info } from '../../../../../../world-info.js';
 import { updateWorldInfoList as updatePluginWorldInfoList } from './WorldInfoList.js';
 import { getContext, extension_settings } from '../../../../../../extensions.js';
-import { chat_metadata, saveChatDebounced } from '../../../../../../../script.js';
+import { chat_metadata, saveChatDebounced, saveMetadata } from '../../../../../../../script.js';
 
 
 // Using preset format - prompts removed
@@ -176,12 +176,33 @@ export class MemoryUI {
         // 2. 从 chat_metadata 获取
         if (!chatWorld) {
             let chat_metadata = this.getContext?.()?.chat_metadata;
+            console.log(`[MemoryUI] getBoundWorldBook: getContext chat_metadata:`, chat_metadata);
+
             if (!chat_metadata && window.chat_metadata) {
                 chat_metadata = window.chat_metadata;
+                console.log(`[MemoryUI] getBoundWorldBook: window.chat_metadata:`, chat_metadata);
             }
+
             if (chat_metadata) {
+                console.log(`[MemoryUI] getBoundWorldBook: METADATA_KEY: ${METADATA_KEY}`);
+                console.log(`[MemoryUI] getBoundWorldBook: chat_metadata keys:`, Object.keys(chat_metadata));
                 chatWorld = chat_metadata[METADATA_KEY];
                 console.log(`[MemoryUI] getBoundWorldBook: 从 chat_metadata 获取到世界书: ${chatWorld}`);
+            }
+        }
+
+        // 3. 从 SillyTavern 的 world_info 获取当前选中的世界书
+        if (!chatWorld && typeof selected_world_info !== 'undefined') {
+            chatWorld = selected_world_info;
+            console.log(`[MemoryUI] getBoundWorldBook: 从 selected_world_info 获取到世界书: ${chatWorld}`);
+        }
+
+        // 4. 如果还是没有，尝试使用第一个可用的世界书
+        if (!chatWorld && world_info && world_info.world_items) {
+            const worldBooks = Object.keys(world_info.world_items);
+            if (worldBooks.length > 0) {
+                chatWorld = worldBooks[0];
+                console.log(`[MemoryUI] getBoundWorldBook: 没有绑定的世界书，使用第一个可用世界书: ${chatWorld}`);
             }
         }
 
@@ -1373,9 +1394,24 @@ export class MemoryUI {
     async getSmartLastSummarizedFloor(currentFloor, interval) {
         try {
             // 尝试从世界书获取历史总结
-            const chatWorld = this.getBoundWorldBook();
+            let chatWorld = this.getBoundWorldBook();
+
+            // 如果没有绑定的世界书，尝试使用当前选中的世界书
+            if (!chatWorld && typeof world_info !== 'undefined' && world_info.world_items) {
+                // 获取所有可用的世界书列表
+                const worldBooks = Object.keys(world_info.world_items);
+                if (worldBooks.length > 0) {
+                    // 使用第一个世界书作为默认选择
+                    chatWorld = worldBooks[0];
+                    console.log(`[MemoryUI] getSmartLastSummarizedFloor: 没有绑定的世界书，使用默认世界书: ${chatWorld}`);
+
+                    // 自动绑定这个世界书
+                    this.bindWorldBook(chatWorld);
+                }
+            }
+
             if (!chatWorld) {
-                console.log('[MemoryUI] getSmartLastSummarizedFloor: 没有绑定的世界书');
+                console.log('[MemoryUI] getSmartLastSummarizedFloor: 没有可用的世界书');
                 return 0;
             }
 
@@ -1425,6 +1461,38 @@ export class MemoryUI {
         } catch (error) {
             console.error('[MemoryUI] getSmartLastSummarizedFloor: 计算智能楼层时出错:', error);
             return 0;
+        }
+    }
+
+    /**
+     * 绑定世界书到当前对话
+     */
+    bindWorldBook(worldBookName) {
+        try {
+            // 确保 chat_metadata 存在
+            if (!window.chat_metadata) {
+                window.chat_metadata = {};
+            }
+
+            // 设置世界书绑定
+            window.chat_metadata[METADATA_KEY] = worldBookName;
+
+            // 保存 metadata
+            if (typeof saveMetadata === 'function') {
+                saveMetadata();
+            }
+
+            console.log(`[MemoryUI] 已绑定世界书 "${worldBookName}" 到当前对话`);
+
+            // 更新UI按钮状态
+            if (window.$) {
+                window.$('.chat_lorebook_button').addClass('world_set');
+            }
+
+            return true;
+        } catch (error) {
+            console.error('[MemoryUI] 绑定世界书失败:', error);
+            return false;
         }
     }
 
