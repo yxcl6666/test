@@ -1461,18 +1461,23 @@ export class MemoryUI {
             const maxEndFloor = Math.max(...summaryRanges.map(r => r.endFloor));
             console.log(`[MemoryUI] getSmartLastSummarizedFloor: 找到历史总结，最大结束楼层: ${maxEndFloor}`);
 
-            // 从最大结束楼层开始，按间隔计算下一个应该总结的楼层
-            // 例如：如果最大结束楼层是5，间隔是10，那么应该在15、25、35...触发
-            let nextSummaryFloor = maxEndFloor;
+            // maxEndFloor 是已总结的最后一层（例如4表示总结到第4层）
+            // 下次总结应该从 maxEndFloor + 1 开始
+            const lastSummarizedFloor = maxEndFloor + 1;
+            console.log(`[MemoryUI] getSmartLastSummarizedFloor: 下次开始楼层: ${lastSummarizedFloor}`);
+
+            // 计算下一个触发点
+            // 例如：如果上次总结到第4层，间隔12，那么应该在16触发（总结5-16层）
+            let nextTriggerFloor = lastSummarizedFloor;
 
             // 找到离当前楼层最近且不超过当前楼层的触发点
-            while (nextSummaryFloor + interval <= currentFloor) {
-                nextSummaryFloor += interval;
+            while (nextTriggerFloor + interval <= currentFloor) {
+                nextTriggerFloor += interval;
             }
 
-            console.log(`[MemoryUI] getSmartLastSummarizedFloor: 计算结果 - 最大结束楼层: ${maxEndFloor}, 当前楼层: ${currentFloor}, 间隔: ${interval}, 智能基准楼层: ${nextSummaryFloor}`);
+            console.log(`[MemoryUI] getSmartLastSummarizedFloor: 计算结果 - 最大结束楼层: ${maxEndFloor}, 下次开始: ${lastSummarizedFloor}, 当前楼层: ${currentFloor}, 间隔: ${interval}, 下次触发楼层: ${nextTriggerFloor}`);
 
-            return nextSummaryFloor;
+            return lastSummarizedFloor;
 
         } catch (error) {
             console.error('[MemoryUI] getSmartLastSummarizedFloor: 计算智能楼层时出错:', error);
