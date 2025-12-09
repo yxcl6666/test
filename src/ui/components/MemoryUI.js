@@ -1379,19 +1379,27 @@ export class MemoryUI {
             }
         }
 
-        // 获取实际最后总结的楼层（lastSummarized - 1）
-        // 因为 lastSummarized 存储的是下次开始的索引
-        const lastActualFloor = lastSummarized - 1;
+        // 判断 lastSummarized 是否代表实际总结的最后一层
+        // 当从世界书读取时，lastSummarized = 最后一层 + 1
+        // 当重置时，lastSummarized = 当前楼层（实际还未总结）
+        const isResetValue = lastSummarized === currentFloor;
 
-        // 基于最后总结的楼层计算下次触发
-        const nextFloor = lastActualFloor + interval;
+        let nextFloor;
+        if (isResetValue) {
+            // 重置情况：从当前楼层开始计算
+            nextFloor = lastSummarized + interval;
+        } else {
+            // 正常情况：从最后总结的层开始计算
+            const lastActualFloor = lastSummarized - 1;
+            nextFloor = lastActualFloor + interval;
+        }
 
         console.log('[MemoryUI] updateAutoSummarizeStatus:', {
             chatId,
             currentFloor,
             interval,
             lastSummarized,
-            lastActualFloor,
+            isResetValue,
             nextFloor,
             nextFloorDisplay: nextFloor + 1,
             syncEnabled: $('#memory_auto_sync_world_info').prop('checked')
