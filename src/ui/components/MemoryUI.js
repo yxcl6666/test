@@ -1872,7 +1872,8 @@ export class MemoryUI {
                 return;
             } else {
                 // 正常模式：总结一次
-                const startIndex = lastSummarized;
+                // lastSummarized 是楼层号（1-based），需要转换为索引（0-based）
+                const startIndex = lastSummarized - 1;  // 转换为索引
                 const endIndex = Math.min(currentFloor - keepCount, startIndex + interval - 1);
 
                 console.log('[MemoryUI] 正常模式总结范围:', {
@@ -2108,9 +2109,10 @@ export class MemoryUI {
                     this.toastr?.warning('自动总结可能失败：' + response.substring(0, 50) + '...');
                 }
                 
-                // 更新最后总结的楼层为endIndex+1（下次从这里开始）
-                // 保存到聊天元数据而不是全局设置
-                this.saveToChatMetadata('lastSummarizedFloor', endIndex + 1);
+                // 更新最后总结的楼层
+                // endIndex 是索引（0-based），需要转换为楼层号（1-based）
+                // endIndex+1 是结束楼层号，再+1 是下一个开始楼层号
+                this.saveToChatMetadata('lastSummarizedFloor', endIndex + 2);
                 
                 this.toastr?.success(`自动总结完成：楼层 #${startIndex + 1} 至 #${endIndex + 1}`);
                 this.updateAutoSummarizeStatus();
@@ -2181,9 +2183,10 @@ export class MemoryUI {
         const maxCatchUpPerBatch = 10; // 限制单次最多追赶10个周期
 
         // 追赶循环：当还有足够的楼层可以总结时
+        // lastSummarized 是楼层号（1-based），需要转换为索引（0-based）
         while (lastSummarized + interval <= safeLimit && catchUpCount < maxCatchUpPerBatch) {
-            const startIndex = lastSummarized;
-            const endIndex = lastSummarized + interval - 1;
+            const startIndex = lastSummarized - 1;  // 转换为索引（0-based）
+            const endIndex = startIndex + interval - 1;
 
             console.log(`[MemoryUI] 追赶批次 ${catchUpCount + 1}:`, {
                 lastSummarized,
@@ -2192,7 +2195,8 @@ export class MemoryUI {
                 displayStart: startIndex + 1,
                 displayEnd: endIndex + 1,
                 interval,
-                safeLimit
+                safeLimit,
+                note: `lastSummarized=${lastSummarized} 是楼层号（1-based），startIndex=${startIndex} 是索引（0-based），将总结第${lastSummarized}至${lastSummarized+interval-1}层`
             });
 
             // 显示当前批次提示
@@ -2206,7 +2210,8 @@ export class MemoryUI {
                 catchUpCount++;
 
                 // 更新 lastSummarized
-                lastSummarized = endIndex + 1;
+                // endIndex 是索引（0-based），需要转换为楼层号（1-based）
+                lastSummarized = endIndex + 2;  // endIndex+1 是结束楼层号，再+1 是下一个开始楼层号
                 this.saveToChatMetadata('lastSummarizedFloor', lastSummarized);
 
                 // 显示批次完成提示
@@ -2343,6 +2348,8 @@ export class MemoryUI {
             }).join('\n\n');
 
             // 添加楼层信息头部
+            // startIndex和endIndex已经是索引，但实际楼层号就是索引+1
+            // 所以显示范围应该是 startIndex+1 到 endIndex+1
             const headerInfo = `【自动总结：楼层 #${startIndex + 1} 至 #${endIndex + 1}，共 ${messages.length} 条消息】\n\n`;
             const content = headerInfo + chatTexts;
 
