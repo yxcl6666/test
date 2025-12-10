@@ -16,6 +16,7 @@ import { updateWorldInfoList as updateSillyTavernWorldInfoList, loadWorldInfo, M
 import { updateWorldInfoList as updatePluginWorldInfoList } from './WorldInfoList.js';
 import { getContext, extension_settings } from '../../../../../../extensions.js';
 import { chat_metadata, saveChatDebounced, saveMetadata } from '../../../../../../../script.js';
+import { catchUpProcessor, batchProcessor } from '../../utils/BatchProcessor.js';
 
 
 // Using preset format - prompts removed
@@ -2328,69 +2329,60 @@ export class MemoryUI {
         let catchUpCount = 0;
         const maxCatchUpPerBatch = 10; // 限制单次最多追赶10个周期
 
-        // 追赶循环：当还有足够的楼层可以总结时
-        // lastSummarized 是楼层号（1-based），表示下次开始总结的楼层
-        // safeLimit 是索引（0-based），需要转换为楼层号进行比较
+        // 计算所有需要处理的批次
+        const batches = [];
+        let tempLastSummarized = lastSummarized;
         const safeLimitFloor = safeLimit + 1;  // 转换为楼层号
-        while (lastSummarized + interval - 1 <= safeLimitFloor && catchUpCount < maxCatchUpPerBatch) {
-            const startIndex = Math.max(0, lastSummarized - 1);  // 转换为索引（0-based），确保不小于0
+
+        while (tempLastSummarized + interval - 1 <= safeLimitFloor && batches.length < maxCatchUpPerBatch) {
+            const startIndex = Math.max(0, tempLastSummarized - 1);
             const endIndex = startIndex + interval - 1;
 
-            console.log(`[MemoryUI] 追赶批次 ${catchUpCount + 1}:`, {
-                lastSummarized,           // 下次开始的楼层号（1-based）
-                startIndex,               // 开始索引（0-based）
-                endIndex,                 // 结束索引（0-based）
-                displayStart: startIndex + 1,    // 显示开始楼层
-                displayEnd: endIndex + 1,        // 显示结束楼层
-                willSummarize: `第${lastSummarized}至${lastSummarized + interval - 1}层`,
-                interval,
-                safeLimit,
-                safeLimitFloor,
-                condition: `${lastSummarized} + ${interval} - 1 <= ${safeLimitFloor} = ${lastSummarized + interval - 1 <= safeLimitFloor}`
+            batches.push({
+                startIndex,
+                endIndex,
+                displayStart: startIndex + 1,
+                displayEnd: endIndex + 1,
+                lastSummarized: tempLastSummarized
             });
 
-            // 显示当前批次提示
-            const currentBatch = catchUpCount + 1;
+            tempLastSummarized = endIndex + 2;
+        }
 
-            // 执行总结
-            try {
-                // 调用 performAutoSummarizeInRange
-                await this.performAutoSummarizeInRange(startIndex, endIndex, interval, keepCount);
+        console.log(`[MemoryUI] 计划处理 ${batches.length} 个追赶批次`);
+
+        // 使用批处理器处理批次
+        await catchUpProcessor.processBatches(
+            batches,
+            async (batch) => {
+                console.log(`[MemoryUI] 追赶批次 ${catchUpCount + 1}:`, batch);
+
+                // 显示当前批次提示
+                const currentBatch = catchUpCount + 1;
+                this.toastr?.info(`智能追赶（${currentBatch}/${batches.length}）：正在总结楼层 #${batch.displayStart} 至 #${batch.displayEnd}...`);
+
+                // 执行总结
+                await this.performAutoSummarizeInRange(batch.startIndex, batch.endIndex, interval, keepCount);
                 catchUpCount++;
 
                 // 更新 lastSummarized 为下一个要开始的楼层号
-                // endIndex 是索引（0-based），endIndex+1 是结束楼层号
-                // 下次开始楼层 = 结束楼层号 + 1 = endIndex + 2
                 const oldLastSummarized = lastSummarized;
-                lastSummarized = endIndex + 2;
+                lastSummarized = batch.endIndex + 2;
                 this.saveToChatMetadata('lastSummarizedFloor', lastSummarized);
 
                 console.log(`[MemoryUI] 批次 ${catchUpCount} 更新:`, {
                     old: oldLastSummarized,
                     new: lastSummarized,
-                    summarizedEndFloor: endIndex + 1,
-                    note: `已总结至第${endIndex + 1}层，下次将从第${lastSummarized}层开始`
+                    summarizedEndFloor: batch.endIndex + 1,
+                    note: `已总结至第${batch.endIndex + 1}层，下次将从第${lastSummarized}层开始`
                 });
 
-                // 计算剩余批次
-                const remainingBatches = Math.ceil((safeLimitFloor - lastSummarized + 1) / interval);
-
-                // 显示批次完成提示
-                if (remainingBatches > 0) {
-                    this.toastr?.success(`批次 ${currentBatch} 完成（已总结至第${endIndex + 1}层），剩余 ${remainingBatches} 个批次`);
-                }
-
-                // 每次总结后稍作延迟
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            } catch (error) {
-                console.error('[MemoryUI] 智能追赶过程中出错:', error);
-                this.toastr?.error(`批次 ${currentBatch} 失败: ${error.message}`);
-                break;
+                return batch;
+            },
+            (processed, total) => {
+                console.log(`[MemoryUI] 追赶进度: ${processed}/${total} 批次`);
             }
-        }
-
-        // 更新状态显示
-        this.updateAutoSummarizeStatus();
+        );
 
         // 显示最终完成提示
         if (catchUpCount > 0) {
@@ -2398,6 +2390,9 @@ export class MemoryUI {
             const finalSummarizedFloor = lastSummarized - 1;
             this.toastr?.success(`智能追赶完成！共处理 ${catchUpCount} 个批次，已总结至楼层 #${finalSummarizedFloor}`);
         }
+
+        // 更新状态显示
+        this.updateAutoSummarizeStatus();
     }
 
     /**

@@ -6,6 +6,7 @@
 
 import { Logger } from './Logger.js';
 import { substituteParams } from '../../../../../../script.js';
+import { messageCache } from './CacheManager.js';
 
 const logger = new Logger('chatUtils');
 
@@ -35,6 +36,23 @@ export function getMessages(chat, options = {}) {
         range = null,
         newRanges = null
     } = options;
+
+    // 生成缓存键
+    const cacheKey = messageCache.generateKey(
+        'getMessages',
+        chat.length,
+        includeHidden,
+        types,
+        range,
+        newRanges
+    );
+
+    // 尝试从缓存获取
+    const cached = messageCache.get(cacheKey);
+    if (cached) {
+        logger.log(`[Cache] 从缓存获取 ${cached.length} 条消息`);
+        return cached;
+    }
 
     let messages = [];
 
@@ -80,6 +98,13 @@ export function getMessages(chat, options = {}) {
     }
 
     logger.log(`Filtered ${messages.length} messages from ${chat.length} total`);
+
+    // 保存到缓存（限制缓存大小，只缓存小的结果集）
+    if (messages.length <= 100) {
+        messageCache.set(cacheKey, messages);
+        logger.log(`[Cache] 缓存 ${messages.length} 条消息`);
+    }
+
     return messages;
 }
 
