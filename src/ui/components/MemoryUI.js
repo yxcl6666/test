@@ -1377,25 +1377,7 @@ export class MemoryUI {
         // 获取上次总结的楼层（包含世界书同步逻辑）
         const lastSummarized = await this.getLastSummarizedFloor();
 
-        // 智能初始化处理：如果lastSummarized为0，尝试智能初始化
-        if (lastSummarized === 0 && this.settings?.memory?.autoSummarize?.enabled) {
-            console.log('[MemoryUI] updateAutoSummarizeStatus: 检测到lastSummarized为0，尝试智能初始化');
-            const smartLastFloor = await this.getSmartLastSummarizedFloor(currentFloor, interval);
-
-            if (smartLastFloor > 0) {
-                console.log(`[MemoryUI] 智能初始化：找到历史总结最大楼层 ${smartLastFloor}，使用该值作为基准`);
-                this.saveToChatMetadata('lastSummarizedFloor', smartLastFloor);
-                const nextFloor = smartLastFloor + interval;
-                $('#memory_next_auto_summarize_floor').text(`#${nextFloor + 1}`);
-                return;
-            } else {
-                console.log('[MemoryUI] updateAutoSummarizeStatus: 未找到历史总结，保持从0开始');
-                // 不需要保存，lastSummarizedFloor已经是0了
-                const nextFloor = interval - 1; // 总结0到第interval-1层
-                $('#memory_next_auto_summarize_floor').text(`#${nextFloor + 1}`);
-                return;
-            }
-        }
+        // 不再进行智能初始化，让用户正常使用即可
 
         // 判断 lastSummarized 是否代表实际总结的最后一层
         // 当从世界书读取时，lastSummarized = 最后一层 + 1
@@ -1675,79 +1657,75 @@ export class MemoryUI {
                 console.log('[MemoryUI] 主开关已禁用，跳过自动总结检查');
                 return;
             }
-            
+
             // 检查是否已有自动总结在进行中
             if (this.isAutoSummarizing) {
                 console.log('[MemoryUI] 自动总结已在进行中，跳过本次触发');
                 return;
             }
-            
+
             // 检查是否启用自动总结
             if (!this.settings?.memory?.autoSummarize?.enabled) {
                 console.log('[MemoryUI] 自动总结未启用');
                 return;
             }
-            
+
             const context = this.getContext ? this.getContext() : getContext();
             if (!context || !context.chat || context.chat.length < 2) {
                 console.log('[MemoryUI] 聊天上下文不可用或消息太少');
                 return;
             }
-            
+
             const currentFloor = context.chat.length - 1;
             const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
             const keepCount = parseInt($('#memory_auto_summarize_count').val()) || 6;
-            
+            const safeLimit = currentFloor - keepCount;
+
             // 获取上次总结的楼层（包含世界书同步逻辑）
             let lastSummarized = await this.getLastSummarizedFloor();
 
-            // 如果lastSummarized为0，说明是新的开始，正常进行总结逻辑
-            // 不再错误地将其设置为当前楼层
-            
             console.log('[MemoryUI] 自动总结检查:', {
                 currentFloor,
                 interval,
                 keepCount,
                 lastSummarized,
-                enabled: this.settings?.memory?.autoSummarize?.enabled
+                safeLimit,
+                distance: currentFloor - lastSummarized
             });
-            
-            // 简化后的触发条件：基于最后总结的楼层计算
-            const nextTriggerFloor = (lastSummarized - 1) + interval;
-            
-            // 当前楼层必须达到或超过下次触发楼层才触发
-            if (currentFloor < nextTriggerFloor) {
-                console.log('[MemoryUI] 未达到触发楼层，不触发', {
+
+            // 如果距离不足以触发一次总结，直接返回
+            if (currentFloor - lastSummarized < interval) {
+                console.log('[MemoryUI] 距离不足一个间隔，不触发', {
                     currentFloor,
                     lastSummarized,
-                    nextTriggerFloor,
                     interval,
-                    needMore: nextTriggerFloor - currentFloor
+                    needMore: interval - (currentFloor - lastSummarized)
                 });
                 return;
             }
-            
+
             // 检查最新消息是否为AI回复
             const latestMessage = context.chat[currentFloor];
             if (!latestMessage || latestMessage.is_user) {
                 console.log('[MemoryUI] 最新消息不是AI回复，不触发');
                 return;
             }
-            
+
             console.log('[MemoryUI] 触发自动总结:', {
                 currentFloor,
                 interval,
                 keepCount,
                 lastSummarized,
-                nextTriggerFloor
+                safeLimit,
+                mode: currentFloor - lastSummarized >= interval * 2 ? 'catchup' : 'normal'
             });
-            
+
             // 设置标志，防止并发执行
             this.isAutoSummarizing = true;
-            
-            // 执行自动总结
-            await this.performAutoSummarize(currentFloor, keepCount);
-            
+
+            // 执行自动总结（传入是否需要追赶的判断）
+            await this.performAutoSummarize(currentFloor, keepCount, interval, lastSummarized);
+
         } catch (error) {
             console.error('[MemoryUI] 自动总结检查失败:', error);
             // 如果检查过程出错，也要清除标志
@@ -1757,8 +1735,12 @@ export class MemoryUI {
     
     /**
      * Perform auto-summarization
+     * @param {number} currentFloor - 当前楼层
+     * @param {number} keepCount - 保留层数
+     * @param {number} interval - 总结间隔
+     * @param {number} lastSummarized - 上次总结到的楼层
      */
-    async performAutoSummarize(currentFloor, keepCount) {
+    async performAutoSummarize(currentFloor, keepCount, interval, lastSummarized) {
         // 在方法开始处声明 result，确保在整个方法范围内可用
         let result = { success: false, response: '' };
 
@@ -1790,42 +1772,51 @@ export class MemoryUI {
             // 获取步进间隔
             const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
 
-            // 计算要总结的范围
-            // currentFloor是当前楼层（从0开始）
-            // actualKeepCount是要保留的层数
-            // 上次总结的位置（包含世界书同步逻辑）
-            const lastSummarized = await this.getLastSummarizedFloor();
+            // 根据传入的参数进行计算
+            // lastSummarized: 上次总结到的楼层
+            // safeLimit: 不可逾越的红线（currentFloor - keepCount）
+            const safeLimit = currentFloor - keepCount;
 
-            // 总结范围起点
-            const startIndex = lastSummarized;
+            // 判断是否需要追赶模式
+            const distance = currentFloor - lastSummarized;
+            const needsCatchUp = distance >= interval * 2;
 
-            // 智能追赶逻辑：
-            // 计算按照固定步进的理想终点
-            // 例如：start=5, interval=10 -> target=14 (5,6,...14 共10层)
-            const targetEndIndex = startIndex + interval - 1;
+            console.log('[MemoryUI] 总结模式判断:', {
+                distance,
+                interval,
+                needsCatchUp,
+                lastSummarized,
+                currentFloor,
+                safeLimit
+            });
 
-            // 计算实际允许的最大总结点（保留最新 keepCount 条）
-            const maxAllowedIndex = currentFloor - actualKeepCount;
+            if (needsCatchUp) {
+                // 追赶模式：调用 continueSmartCatchUp
+                console.log('[MemoryUI] 进入追赶模式');
+                this.toastr?.info('检测到未总结的历史内容，开始智能追赶...');
 
-            // 最终决定终点
-            // 如果目标终点超过了允许范围，说明不够凑齐一个周期，应该等待
-            // 除非启用了"强制同步"或其他逻辑，这里我们坚持"整周期总结"原则以保持一致性
-            if (targetEndIndex > maxAllowedIndex) {
-                console.log('[MemoryUI] 消息数量不足一个完整周期，等待更多消息', {
+                // 调用追赶功能
+                await this.continueSmartCatchUp();
+
+                // 追赶完成后直接返回
+                return;
+            } else {
+                // 正常模式：总结一次
+                const startIndex = lastSummarized;
+                const endIndex = Math.min(currentFloor - keepCount, startIndex + interval - 1);
+
+                console.log('[MemoryUI] 正常模式总结范围:', {
                     startIndex,
-                    targetEndIndex,
-                    maxAllowedIndex,
+                    endIndex,
+                    keepCount,
                     interval
                 });
-                // 静默返回，不显示警告，因为这在追赶模式下是正常的停止条件
-                return;
-            }
 
-            const endIndex = targetEndIndex;
-
-            if (endIndex <= startIndex) {
-                console.log('[MemoryUI] 范围计算异常', { startIndex, endIndex });
-                return;
+                // 检查总结范围是否有效
+                if (endIndex <= startIndex) {
+                    console.log('[MemoryUI] 总结范围无效，不执行总结', { startIndex, endIndex });
+                    return;
+                }
             }
 
             // ---------------------------------------------------------
@@ -2079,70 +2070,50 @@ export class MemoryUI {
             console.error('[MemoryUI] continueSmartCatchUp: 无法获取聊天上下文');
             return;
         }
+
         const currentFloor = context.chat.length - 1;
-        const maxAllowedIndex = currentFloor - keepCount;
+        const safeLimit = currentFloor - keepCount;  // 不可逾越的红线
+        let lastSummarized = await this.getLastSummarizedFloor();
 
-        // 计算总共需要追赶的批次
-        const latestLastSummarized = await this.getLastSummarizedFloor();
-        const remainingFloors = maxAllowedIndex - latestLastSummarized;
-        const totalBatches = Math.ceil(remainingFloors / interval);
-
-        // 显示追赶开始提示
-        if (totalBatches > 0) {
-            this.toastr?.info(`智能追赶启动：需要处理 ${totalBatches} 个批次（楼层 #${latestLastSummarized + 1} 至 #${maxAllowedIndex + 1}）`);
-        }
+        console.log('[MemoryUI] 开始智能追赶:', {
+            currentFloor,
+            safeLimit,
+            lastSummarized,
+            interval,
+            keepCount
+        });
 
         let catchUpCount = 0;
-        const maxCatchUpPerBatch = 10; // 限制单次最多追赶10个周期，避免无限循环
+        const maxCatchUpPerBatch = 10; // 限制单次最多追赶10个周期
 
-        while (catchUpCount < maxCatchUpPerBatch) {
-            const currentLastSummarized = await this.getLastSummarizedFloor();
+        // 追赶循环：当还有足够的楼层可以总结时
+        while (lastSummarized + interval <= safeLimit && catchUpCount < maxCatchUpPerBatch) {
+            const startIndex = lastSummarized;
+            const endIndex = lastSummarized + interval - 1;
 
-            // 计算下一个周期应该开始的楼层
-            const nextCycleStart = currentLastSummarized;
-            const nextCycleEnd = nextCycleStart + interval - 1;
-
-            console.log(`[MemoryUI] 智能追赶检查第 ${catchUpCount + 1} 个周期:`, {
-                currentLastSummarized,
-                nextCycleStart,
-                nextCycleEnd,
-                maxAllowedIndex,
-                currentFloor
-            });
-
-            // 检查是否还有需要追赶的周期
-            if (nextCycleEnd > maxAllowedIndex) {
-                console.log('[MemoryUI] 已追赶到最新进度附近，等待新消息触发下一个周期', {
-                    nextCycleStart,
-                    nextCycleEnd,
-                    maxAllowedIndex,
-                    catchUpCount
-                });
-                break;
-            }
+            console.log(`[MemoryUI] 追赶批次 ${catchUpCount + 1}: 总结 ${startIndex} 到 ${endIndex}`);
 
             // 显示当前批次提示
             const currentBatch = catchUpCount + 1;
-            const remainingBatches = Math.ceil((maxAllowedIndex - nextCycleEnd - 1) / interval);
-
-            console.log(`[MemoryUI] 智能追赶第 ${currentBatch}/${totalBatches} 个周期: 总结 ${nextCycleStart}-${nextCycleEnd}`);
+            const remainingBatches = Math.floor((safeLimit - endIndex - 1) / interval) + 1;
 
             // 执行总结
             try {
-                // 调用 performAutoSummarize 但传入特定的范围
-                await this.performAutoSummarizeInRange(nextCycleStart, nextCycleEnd, interval, keepCount);
+                // 调用 performAutoSummarizeInRange
+                await this.performAutoSummarizeInRange(startIndex, endIndex, interval, keepCount);
                 catchUpCount++;
 
-                // 保存进度
-                this.saveToChatMetadata('lastSummarizedFloor', nextCycleEnd + 1);
+                // 更新 lastSummarized
+                lastSummarized = endIndex + 1;
+                this.saveToChatMetadata('lastSummarizedFloor', lastSummarized);
 
                 // 显示批次完成提示
                 if (remainingBatches > 0) {
                     this.toastr?.success(`批次 ${currentBatch} 完成，剩余 ${remainingBatches} 个批次`);
                 }
 
-                // 每次总结后稍作延迟，避免过快的连续操作
-                await new Promise(resolve => setTimeout(resolve, 1000)); // 增加到1秒，让UI有时间更新
+                // 每次总结后稍作延迟
+                await new Promise(resolve => setTimeout(resolve, 1000));
             } catch (error) {
                 console.error('[MemoryUI] 智能追赶过程中出错:', error);
                 this.toastr?.error(`批次 ${currentBatch} 失败: ${error.message}`);
@@ -2155,8 +2126,7 @@ export class MemoryUI {
 
         // 显示最终完成提示
         if (catchUpCount > 0) {
-            const finalLastSummarized = await this.getLastSummarizedFloor();
-            this.toastr?.success(`智能追赶完成！共处理 ${catchUpCount} 个批次，已总结至楼层 #${finalLastSummarized}`);
+            this.toastr?.success(`智能追赶完成！共处理 ${catchUpCount} 个批次，已总结至楼层 #${lastSummarized}`);
         }
     }
 
