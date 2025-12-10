@@ -1904,9 +1904,7 @@ export class MemoryUI {
                 }
 
                 // 显示总结范围提示
-                // 当有保留层数时，结束楼层需要调整显示
-                const displayEndFloor = endIndex + 1 - (keepCount > 0 ? keepCount - 1 : 0);
-                this.toastr?.info(`正在总结：楼层 #${startIndex + 1} 至 #${displayEndFloor}`);
+                this.toastr?.info(`开始自动总结：楼层 #${startIndex + 1} 至 #${endIndex + 1}...`);
             }
 
             // ---------------------------------------------------------
@@ -2128,11 +2126,19 @@ export class MemoryUI {
                 // 更新最后总结的楼层
                 // endIndex 是索引（0-based），需要转换为楼层号（1-based）
                 // endIndex+1 是结束楼层号，再+1 是下一个开始楼层号
-                this.saveToChatMetadata('lastSummarizedFloor', endIndex + 2);
-                
-                // 当有保留层数时，结束楼层需要调整显示
-                const displayEndFloor = endIndex + 1 - (keepCount > 0 ? keepCount - 1 : 0);
-                this.toastr?.success(`自动总结完成：楼层 #${startIndex + 1} 至 #${displayEndFloor}`);
+                const nextStartFloor = endIndex + 2;
+                this.saveToChatMetadata('lastSummarizedFloor', nextStartFloor);
+
+                // 调试：记录实际总结的范围
+                console.log('[MemoryUI] 自动总结完成，范围记录:', {
+                    startIndex,           // 开始索引（0-based）
+                    endIndex,             // 结束索引（0-based）
+                    displayStart: startIndex + 1,   // 显示开始楼层
+                    displayEnd: endIndex + 1,       // 显示结束楼层
+                    nextStartFloor        // 下次开始的楼层号
+                });
+
+                this.toastr?.success(`自动总结完成：楼层 #${startIndex + 1} 至 #${endIndex + 1}`);
                 this.updateAutoSummarizeStatus();
                 
                 // 检查是否需要隐藏楼层

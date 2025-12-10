@@ -1,200 +1,46 @@
-# GEMINI.md
+# Gemini Project Context: Vectors Enhanced (SillyTavern Extension)
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Project Overview
+**Vectors Enhanced** is a comprehensive extension for [SillyTavern](https://github.com/SillyTavern/SillyTavern) that adds advanced vectorization capabilities. It enables semantic search, intelligent memory management (summarization), and external task linking (cross-chat memory).
 
-## 项目概述
+This is a **client-side JavaScript** project designed to run directly within the browser environment of SillyTavern. It does not use a standard build pipeline (like Webpack/Vite) but relies on native ES Modules and SillyTavern's extension loader.
 
-这是 Vectors Enhanced - 一个 SillyTavern 的向量化扩展插件，提供语义搜索、智能记忆管理和内容处理功能。
+## Architecture
+The project follows a **Layered Architecture** to manage complexity:
 
-## 开发环境设置
+-   **Root (`/`)**: Contains the entry point `index.js`, `manifest.json`, and basic UI assets (`style.css`, HTML templates).
+-   **Core (`src/core/`)**: Domain logic and business rules.
+    -   `entities/`: Data models (Content, Vector, Task).
+    -   `extractors/`: Logic to pull data from Chats, Files, and World Info.
+    -   `pipeline/`: Processing pipeline (Extract -> Process -> Dispatch -> Execute).
+-   **Infrastructure (`src/infrastructure/`)**: Low-level services.
+    -   `ConfigManager.js`: Manages extension settings.
+    -   `storage/`: Interaction with Vector Databases (IndexedDB/InMemory).
+    -   `api/`: Adapters for Vectorization APIs (OpenAI, Ollama, etc.).
+-   **UI (`src/ui/`)**: User Interface components.
+    -   Components are split into separate files (e.g., `SettingsPanel.js`, `TaskList.js`).
+    -   Uses **jQuery** (via SillyTavern global) and direct DOM manipulation.
+-   **Services (`src/services/`)**: Standalone services like Rerank logic.
 
-### 必要条件
-- SillyTavern 最新版本
-- Node.js 14+
-- 现代浏览器（Chrome/Firefox/Edge）
+## Key Files
+*   **`index.js`**: The massive main entry point. It orchestrates the initialization, registers slash commands, binds global event listeners, and acts as the glue between SillyTavern's API and the extension's modular code. **Note:** This file is currently very large (4000+ lines) and contains significant business logic that is slowly being refactored into `src/`.
+*   **`manifest.json`**: Defines extension metadata (name, version, loading order) for SillyTavern.
+*   **`src/infrastructure/ConfigManager.js`**: Handles reading/writing settings to `extension_settings.vectors_enhanced`.
+*   **`webllm.js`**: Likely handles WebGPU-accelerated local inference if enabled.
 
-### 安装步骤
-1. 将扩展文件夹复制到 SillyTavern 的扩展目录：
-   ```
-   SillyTavern/public/scripts/extensions/third-party/vectors-enhanced/
-   ```
+## Development Conventions
+*   **Environment**: Runs inside the browser. No Node.js runtime APIs (fs, child_process) are available directly, though SillyTavern provides some wrappers.
+*   **Module System**: Native ES Modules (`import`/`export`).
+*   **Dependencies**: Relies on globals provided by SillyTavern (e.g., `jQuery`, `toastr`, `extension_settings`, `getContext`).
+*   **Styling**: Plain CSS in `style.css` and sub-files in `src/ui/styles/`.
+*   **Refactoring Goal**: The project is in the process of moving logic from `index.js` to the `src/` directory. New features should be implemented in `src/` whenever possible.
 
-2. 在 SillyTavern 中启用扩展（扩展设置）
+## Installation & Testing
+1.  **Install**: Copy the entire project folder to `SillyTavern/public/scripts/extensions/third-party/vectors-enhanced/`.
+2.  **Enable**: Refresh SillyTavern, go to Extensions, and enable "Vectors Enhanced".
+3.  **Debug**: Use the browser's Developer Tools (F12) Console. The extension logs with prefixes like `[Vectors]` or `Pipeline:`.
 
-## 常用开发命令
-
-由于这是一个前端扩展插件，没有传统的 npm scripts。主要开发流程是：
-
-### 调试技巧
-1. 使用浏览器开发者工具查看控制台日志
-2. 检查 SillyTavern 的扩展面板
-3. 查看 `src/utils/Logger.js` 了解日志系统
-
-### 测试功能
-1. 在 SillyTavern 中加载扩展
-2. 在聊天界面测试各项功能
-3. 使用 debug/ 目录下的调试工具：
-   ```javascript
-   // 在浏览器控制台运行
-   // 使用内置的调试功能
-   ```
-
-## 技术架构
-
-### 分层架构
-```
-应用层 (Application Layer)
-├── index.js - 主入口文件
-└── UI 交互逻辑
-
-核心层 (Core Layer)
-├── entities/ - 实体模型 (Content, Vector, Task)
-├── extractors/ - 内容提取器系统
-├── pipeline/ - 处理管道和中间件
-├── memory/ - 记忆管理系统
-├── external-tasks/ - 外挂任务系统
-└── export-import/ - 向量导入导出
-
-UI层 (UI Layer)
-├── components/ - 15+ 独立组件
-├── StateManager.js - 状态管理
-├── EventManager.js - 事件管理
-└── settingsManager.js - 设置管理
-
-基础设施层 (Infrastructure Layer)
-├── events/ - 事件总线
-├── storage/ - 存储适配器
-├── api/ - 向量化引擎适配器
-└── ConfigManager.js - 配置管理
-```
-
-### 关键设计模式
-- **适配器模式**: 向量化引擎适配（6种引擎）
-- **策略模式**: 内容提取器、处理器
-- **中间件模式**: 管道处理
-- **观察者模式**: 事件系统
-- **工厂模式**: 处理器创建
-
-## 核心功能模块
-
-### 1. 向量化系统
-- 支持6种向量化引擎：Transformers.js, Ollama, vLLM, WebLLM, OpenAI, Cohere
-- 批量处理和去重机制
-- 两阶段架构：数据准备与向量化分离
-
-### 2. 提取器系统 (src/core/extractors/)
-- IContentExtractor: 基础接口
-- ChatExtractor: 聊天内容提取，支持标签规则
-- FileExtractor: 文件内容提取
-- WorldInfoExtractor: 世界信息提取
-
-### 3. 处理管道 (src/core/pipeline/)
-- TextPipeline: 管道管理器
-- PipelineEventBus: 事件总线
-- ProcessingContext: 处理上下文
-- 支持中间件：日志、转换、验证
-
-### 4. UI组件系统
-每个组件都是独立的类，负责特定的UI功能：
-- ActionButtons: 操作按钮
-- TaskList: 任务列表
-- MemoryUI: 记忆管理
-- SettingsPanel: 设置面板
-- ProgressManager: 进度管理
-
-## 开发指南
-
-### 添加新的向量化引擎
-1. 在 `src/infrastructure/api/VectorizationAdapter.js` 中添加引擎配置
-2. 实现适配器接口
-3. 在 UI 中添加相应的设置选项
-
-### 添加新的内容提取器
-1. 实现 `IContentExtractor` 接口
-2. 在 `ProcessorFactory` 中注册
-3. 更新 UI 组件以支持新提取器
-
-### 添加新的管道中间件
-1. 实现 `IMiddleware` 接口
-2. 在 `MiddlewareManager` 中注册
-3. 配置中间件顺序
-
-### 添加新的UI组件
-1. 在 `src/ui/components/` 创建新组件
-2. 在 `index.js` 中初始化
-3. 使用 EventManager 管理事件
-
-## 重要文件说明
-
-### 主入口文件
-- `index.js`: 扩展主入口，包含所有初始化逻辑和SillyTavern集成
-
-### 核心实体
-- `src/core/entities/Content.js`: 内容实体
-- `src/core/entities/Vector.js`: 向量实体
-- `src/core/entities/Task.js`: 任务实体
-
-### 工具类
-- `src/utils/tagExtractor.js`: 标签提取工具
-- `src/utils/chatUtils.js`: 聊天处理工具
-- `src/utils/Logger.js`: 日志系统
-
-### 调试工具
-- `debug/`: 调试工具集
-  - `debugger.js`: 主调试器
-  - `analyzers/`: 数据分析工具
-  - `tools/`: 实用工具
-
-## 扩展开发要点
-
-### 事件系统
-使用 `eventBus` 进行模块间通信：
-```javascript
-import { eventBus } from './src/infrastructure/events/eventBus.instance.js';
-
-// 发布事件
-eventBus.emit('vectors:taskCreated', taskData);
-
-// 订阅事件
-eventBus.on('vectors:taskCreated', (taskData) => {
-    // 处理事件
-});
-```
-
-### 状态管理
-使用 `StateManager` 管理 UI 状态：
-```javascript
-import { stateManager } from './src/ui/StateManager.js';
-
-// 获取状态
-const state = stateManager.getState();
-
-// 更新状态
-stateManager.setState('key', value);
-```
-
-### 配置管理
-使用 `ConfigManager` 管理配置：
-```javascript
-import { configManager } from './src/infrastructure/ConfigManager.js';
-
-// 获取配置
-const value = configManager.get('path.to.key');
-
-// 设置配置
-configManager.set('path.to.key', value);
-```
-
-## 注意事项
-
-1. **SillyTavern 集成**: 所有功能需要通过 SillyTavern 的 API 进行集成
-2. **性能考虑**: 使用批量处理和缓存机制优化性能
-3. **错误处理**: 所有异步操作都需要适当的错误处理
-4. **日志记录**: 使用 Logger.js 记录重要操作
-5. **UI 响应性**: 使用 debounce 处理高频操作
-6. **向后兼容**: 保持与旧格式的兼容性
-
-## 扩展文档
-
-- 详细使用教程：`标签提取示例.md`
-- 各模块的 README 文件包含更详细的信息
+## Common Tasks
+*   **Vectorization**: The core feature. Controlled by `performVectorization` in `index.js` (being moved to `src/core/pipeline`).
+*   **Storage**: Vector data is stored using an adapter pattern (likely client-side IndexedDB or similar).
+*   **Settings**: All settings are stored in the global `extension_settings.vectors_enhanced` object.
