@@ -1860,6 +1860,10 @@ export class MemoryUI {
                 safeLimit
             });
 
+            // 默认定义 startIndex 和 endIndex，防止未定义错误
+            let startIndex = lastSummarized - 1;  // lastSummarized 是楼层号，转换为索引
+            let endIndex = Math.min(currentFloor - keepCount, startIndex + interval - 1);
+
             if (needsCatchUp) {
                 // 追赶模式：调用 continueSmartCatchUp
                 console.log('[MemoryUI] 进入追赶模式');
@@ -1872,10 +1876,6 @@ export class MemoryUI {
                 return;
             } else {
                 // 正常模式：总结一次
-                // lastSummarized 是楼层号（1-based），需要转换为索引（0-based）
-                const startIndex = lastSummarized - 1;  // 转换为索引
-                const endIndex = Math.min(currentFloor - keepCount, startIndex + interval - 1);
-
                 console.log('[MemoryUI] 正常模式总结范围:', {
                     startIndex,
                     endIndex,
