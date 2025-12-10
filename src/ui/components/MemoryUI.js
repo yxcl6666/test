@@ -1700,16 +1700,9 @@ export class MemoryUI {
             
             // 获取上次总结的楼层（包含世界书同步逻辑）
             let lastSummarized = await this.getLastSummarizedFloor();
-            
-            // 兼容性处理：如果lastSummarized为0，说明是旧版本用户或新用户
-            // 初始化为当前楼层，避免立即触发
-            if (lastSummarized === 0) {
-                console.log('[MemoryUI] 检测到lastSummarized为0，初始化为当前楼层:', currentFloor);
-                this.saveToChatMetadata('lastSummarizedFloor', currentFloor);
-                lastSummarized = currentFloor;
-                // 初始化后本次不触发，等待下次检查
-                return;
-            }
+
+            // 如果lastSummarized为0，说明是新的开始，正常进行总结逻辑
+            // 不再错误地将其设置为当前楼层
             
             console.log('[MemoryUI] 自动总结检查:', {
                 currentFloor,
