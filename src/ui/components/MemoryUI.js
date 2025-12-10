@@ -1,6 +1,14 @@
 /**
  * Memory UI Component
  * Handles the memory management interface (UI only)
+ *
+ * 楼层编号系统说明：
+ * - lastSummarizedFloor: 存储的是楼层号（1-based），表示"下次开始总结的楼层"
+ *   例如：如果值为6，表示上次总结到了第5层，下次从第6层开始
+ * - startIndex/endIndex: 是数组索引（0-based），用于访问 chat 数组
+ *   例如：要总结第6-10层，startIndex=5, endIndex=9
+ * - 显示给用户时统一使用 1-based（楼层号）
+ *   例如：弹窗显示"总结 #6 至 #10"
  */
 
 // Import updateWorldInfoList functions
@@ -1861,8 +1869,13 @@ export class MemoryUI {
             });
 
             // 默认定义 startIndex 和 endIndex，防止未定义错误
-            let startIndex = lastSummarized - 1;  // lastSummarized 是楼层号，转换为索引
+            // lastSummarized 是楼层号（1-based），表示下次开始总结的楼层
+            // startIndex 是索引（0-based）
+            let startIndex = lastSummarized - 1;
             let endIndex = Math.min(currentFloor - keepCount, startIndex + interval - 1);
+
+            // 保存初始计算值，用于后续对比
+            const initialEndIndex = endIndex;
 
             console.log('[MemoryUI] 范围计算详情:', {
                 currentFloor,           // 当前楼层（1-based）
@@ -1875,7 +1888,8 @@ export class MemoryUI {
                 endIndexCalc2: `startIndex + interval - 1 = ${startIndex} + ${interval} - 1 = ${startIndex + interval - 1}`,
                 endIndex,
                 displayStart: startIndex + 1,
-                displayEnd: endIndex + 1
+                displayEnd: endIndex + 1,
+                note: `将总结第${startIndex + 1}层至第${endIndex + 1}层`
             });
 
             if (needsCatchUp) {
@@ -2133,10 +2147,21 @@ export class MemoryUI {
                 console.log('[MemoryUI] 自动总结完成，范围记录:', {
                     startIndex,           // 开始索引（0-based）
                     endIndex,             // 结束索引（0-based）
+                    initialEndIndex,      // 初始计算的结束索引
+                    endIndexChanged: endIndex !== initialEndIndex,
                     displayStart: startIndex + 1,   // 显示开始楼层
                     displayEnd: endIndex + 1,       // 显示结束楼层
                     nextStartFloor        // 下次开始的楼层号
                 });
+
+                // 如果 endIndex 被修改了，记录警告
+                if (endIndex !== initialEndIndex) {
+                    console.warn('[MemoryUI] 警告: endIndex 在计算后被修改！', {
+                        initial: initialEndIndex,
+                        current: endIndex,
+                        diff: endIndex - initialEndIndex
+                    });
+                }
 
                 this.toastr?.success(`自动总结完成：楼层 #${startIndex + 1} 至 #${endIndex + 1}`);
                 this.updateAutoSummarizeStatus();
@@ -2207,25 +2232,28 @@ export class MemoryUI {
         const maxCatchUpPerBatch = 10; // 限制单次最多追赶10个周期
 
         // 追赶循环：当还有足够的楼层可以总结时
-        // lastSummarized 是楼层号（1-based），需要转换为索引（0-based）
-        while (lastSummarized + interval <= safeLimit && catchUpCount < maxCatchUpPerBatch) {
+        // lastSummarized 是楼层号（1-based），表示下次开始总结的楼层
+        // safeLimit 是索引（0-based），需要转换为楼层号进行比较
+        const safeLimitFloor = safeLimit + 1;  // 转换为楼层号
+        while (lastSummarized + interval - 1 <= safeLimitFloor && catchUpCount < maxCatchUpPerBatch) {
             const startIndex = lastSummarized - 1;  // 转换为索引（0-based）
             const endIndex = startIndex + interval - 1;
 
             console.log(`[MemoryUI] 追赶批次 ${catchUpCount + 1}:`, {
-                lastSummarized,
-                startIndex,
-                endIndex,
-                displayStart: startIndex + 1,
-                displayEnd: endIndex + 1,
+                lastSummarized,           // 下次开始的楼层号（1-based）
+                startIndex,               // 开始索引（0-based）
+                endIndex,                 // 结束索引（0-based）
+                displayStart: startIndex + 1,    // 显示开始楼层
+                displayEnd: endIndex + 1,        // 显示结束楼层
+                willSummarize: `第${lastSummarized}至${lastSummarized + interval - 1}层`,
                 interval,
                 safeLimit,
-                note: `lastSummarized=${lastSummarized} 是楼层号（1-based），startIndex=${startIndex} 是索引（0-based），将总结第${lastSummarized}至${lastSummarized+interval-1}层`
+                safeLimitFloor,
+                condition: `${lastSummarized} + ${interval} - 1 <= ${safeLimitFloor} = ${lastSummarized + interval - 1 <= safeLimitFloor}`
             });
 
             // 显示当前批次提示
             const currentBatch = catchUpCount + 1;
-            const remainingBatches = Math.floor((safeLimit - endIndex - 1) / interval) + 1;
 
             // 执行总结
             try {
@@ -2233,14 +2261,26 @@ export class MemoryUI {
                 await this.performAutoSummarizeInRange(startIndex, endIndex, interval, keepCount);
                 catchUpCount++;
 
-                // 更新 lastSummarized
-                // endIndex 是索引（0-based），需要转换为楼层号（1-based）
-                lastSummarized = endIndex + 2;  // endIndex+1 是结束楼层号，再+1 是下一个开始楼层号
+                // 更新 lastSummarized 为下一个要开始的楼层号
+                // endIndex 是索引（0-based），endIndex+1 是结束楼层号
+                // 下次开始楼层 = 结束楼层号 + 1 = endIndex + 2
+                const oldLastSummarized = lastSummarized;
+                lastSummarized = endIndex + 2;
                 this.saveToChatMetadata('lastSummarizedFloor', lastSummarized);
+
+                console.log(`[MemoryUI] 批次 ${catchUpCount} 更新:`, {
+                    old: oldLastSummarized,
+                    new: lastSummarized,
+                    summarizedEndFloor: endIndex + 1,
+                    note: `已总结至第${endIndex + 1}层，下次将从第${lastSummarized}层开始`
+                });
+
+                // 计算剩余批次
+                const remainingBatches = Math.ceil((safeLimitFloor - lastSummarized + 1) / interval);
 
                 // 显示批次完成提示
                 if (remainingBatches > 0) {
-                    this.toastr?.success(`批次 ${currentBatch} 完成，剩余 ${remainingBatches} 个批次`);
+                    this.toastr?.success(`批次 ${currentBatch} 完成（已总结至第${endIndex + 1}层），剩余 ${remainingBatches} 个批次`);
                 }
 
                 // 每次总结后稍作延迟
@@ -2257,7 +2297,9 @@ export class MemoryUI {
 
         // 显示最终完成提示
         if (catchUpCount > 0) {
-            this.toastr?.success(`智能追赶完成！共处理 ${catchUpCount} 个批次，已总结至楼层 #${lastSummarized}`);
+            // lastSummarized 是下次开始的楼层，所以已总结的最后一层是 lastSummarized - 1
+            const finalSummarizedFloor = lastSummarized - 1;
+            this.toastr?.success(`智能追赶完成！共处理 ${catchUpCount} 个批次，已总结至楼层 #${finalSummarizedFloor}`);
         }
     }
 
