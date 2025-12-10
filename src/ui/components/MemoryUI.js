@@ -2211,14 +2211,20 @@ export class MemoryUI {
         try {
             console.log(`[MemoryUI] performAutoSummarizeInRange: 开始总结 ${startIndex}-${endIndex}`, { interval, keepCount });
 
-            // 显示总结开始提示
-            this.toastr?.info(`智能追赶：正在总结楼层 #${startIndex + 1} 至 #${endIndex + 1}...`);
+            // 计算实际要总结的楼层范围（显示楼层是1-based）
+            const displayStartFloor = startIndex + 1;
+            const displayEndFloor = endIndex + 1;
+
+            // 显示总结开始提示 - 使用正确的显示楼层
+            this.toastr?.info(`智能追赶：正在总结楼层 #${displayStartFloor} 至 #${displayEndFloor}...`);
 
             // 调用主总结方法，但传入特定的范围
             const success = await this.performAutoSummarizeDirect(startIndex, endIndex, keepCount, true);
 
             if (success) {
-                console.log(`[MemoryUI] 总结完成: 楼层 #${startIndex + 1} 至 #${endIndex + 1}`);
+                console.log(`[MemoryUI] 总结完成: 楼层 #${displayStartFloor} 至 #${displayEndFloor}`);
+                // 更新批次完成提示，使用正确的楼层范围
+                this.toastr?.success(`已完成总结楼层 #${displayStartFloor} 至 #${displayEndFloor}`);
             }
 
         } catch (error) {
@@ -2243,11 +2249,59 @@ export class MemoryUI {
             const { getContext, extension_settings } = await import('../../../../../../extensions.js');
             const { getMessages } = await import('../../utils/chatUtils.js');
             const { extractTagContent } = await import('../../utils/tagExtractor.js');
+            const { eventBus } = await import('../../infrastructure/events/eventBus.instance.js');
+            const { ProcessorFactory } = await import('../../core/pipeline/ProcessorFactory.js');
+            const { TextPipeline } = await import('../../core/pipeline/TextPipeline.js');
             const settings = extension_settings.vectors_enhanced;
             const context = getContext();
 
-            // 构建内容
-            const content = this.buildSummaryContent(context, startIndex, endIndex);
+            // 获取标签提取规则
+            const rules = settings.selected_content?.chat?.rules || [];
+
+            // 收集要总结的AI消息 - 使用与performAutoSummarize相同的逻辑
+            const aiMessages = [];
+
+            // 从startIndex开始，到endIndex结束（包含），收集所有AI消息
+            for (let i = startIndex; i <= endIndex; i++) {
+                const msg = context.chat[i];
+                if (msg && !msg.is_user && !msg.is_system) {
+                    // 这是AI消息
+                    aiMessages.push({
+                        ...msg,
+                        index: i
+                    });
+                }
+            }
+
+            console.log('[MemoryUI] performAutoSummarizeDirect: 收集到的AI消息数量:', aiMessages.length);
+
+            if (aiMessages.length === 0) {
+                console.log('[MemoryUI] performAutoSummarizeDirect: 没有找到AI消息');
+                return false;
+            }
+
+            // 处理并格式化AI消息 - 使用与performAutoSummarize相同的逻辑
+            const chatTexts = aiMessages.map(msg => {
+                // 获取消息文本（SillyTavern使用mes属性）
+                const messageText = msg.mes || msg.text || '';
+
+                if (!messageText) {
+                    console.warn(`[MemoryUI] 楼层 #${msg.index + 1} 的AI消息为空`);
+                    return `#${msg.index + 1} [AI]: （空消息）`;
+                }
+
+                // 对AI消息应用标签提取规则
+                const extractedText = extractTagContent(messageText, rules, this.settings.content_blacklist || []);
+                return `#${msg.index + 1} [AI]: ${extractedText}`;
+            }).join('\n\n');
+
+            // 添加楼层信息头部
+            const headerInfo = `【自动总结：楼层 #${startIndex + 1} 至 #${endIndex + 1}，共 ${aiMessages.length} 条AI消息】\n\n`;
+            const content = headerInfo + chatTexts;
+
+            // 调试：检查最终内容
+            console.log('[MemoryUI] performAutoSummarizeDirect: 准备发送的内容长度:', content.length);
+            console.log('[MemoryUI] performAutoSummarizeDirect: 内容预览:', content.substring(0, 200) + '...');
 
             // 获取API配置
             const apiSource = $('#memory_api_source').val() || this.settings?.memory?.source || 'google_openai';
@@ -2261,6 +2315,12 @@ export class MemoryUI {
                 modelValue: apiConfig.model
             });
 
+            // 获取总结格式
+            const summaryFormat = this.settings?.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
+            const detailLevel = $('#memory_detail_level').val() || this.settings?.memory?.detailLevel || defaultMemorySettings.detailLevel;
+            const detailLevels = { 'brief': 200, 'normal': 500, 'detailed': 1000 };
+            const formattedSummaryFormat = summaryFormat.replace('{{length}}', detailLevels[detailLevel]);
+
             // 执行总结
             const maxTokens = parseInt($('#memory_max_tokens').val()) || this.settings.memory?.maxTokens || defaultMemorySettings.maxTokens;
             let result = { success: false };
@@ -2269,7 +2329,7 @@ export class MemoryUI {
                 result = await this.memoryService.sendMessage(content, {
                     apiSource,
                     apiConfig,
-                    summaryFormat: this.settings?.memory?.summaryFormat || defaultMemorySettings.summaryFormat,
+                    summaryFormat: formattedSummaryFormat,
                     maxTokens
                 });
             } catch (error) {
@@ -2289,7 +2349,7 @@ export class MemoryUI {
                         await this.memoryService.createWorldBook(true, {
                             start: startIndex + 1,  // 转换为1基索引
                             end: endIndex + 1,      // 转换为1基索引
-                            count: endIndex - startIndex + 1
+                            count: aiMessages.length  // 使用实际的AI消息数量
                         });
                     }
 
@@ -2318,24 +2378,6 @@ export class MemoryUI {
             }
         }
       }
-
-    /**
-     * 构建总结内容
-     */
-    buildSummaryContent(context, startIndex, endIndex) {
-        const messages = context.chat || [];
-
-        let content = '';
-        for (let i = startIndex; i <= endIndex && i < messages.length; i++) {
-            const msg = messages[i];
-            if (msg && msg.mes && !msg.is_system) {
-                const prefix = msg.is_user ? '用户' : 'AI';
-                content += `${prefix}: ${msg.mes}\n\n`;
-            }
-        }
-
-        return content;
-    }
 
     /**
      * Hide floors if enabled in settings
