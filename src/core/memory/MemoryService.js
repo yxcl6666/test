@@ -486,13 +486,16 @@ export class MemoryService {
                         entryName = `楼层 #${floorRange.start}-${floorRange.end}`;
                     }
                 } else {
-                    // 否则使用原来的逻辑（总结1、总结2等）
-                    const existingEntries = Object.values(worldBookData.entries);
-                    const summaryEntries = existingEntries.filter(entry =>
-                        entry.comment && entry.comment.startsWith('总结')
-                    );
-                    const nextNumber = summaryEntries.length + 1;
-                    entryName = `总结${nextNumber}`;
+                    // 如果没有楼层信息，则不创建条目（避免创建无用的"总结N"条目）
+                    console.warn('[MemoryService] 没有楼层信息，跳过创建世界书条目');
+                    return {
+                        success: true,
+                        name: worldBookName,
+                        data: worldBookData,
+                        boundToChatLore: true,
+                        newEntry: false,
+                        isNewWorldBook: false
+                    };
                 }
                 newEntry.comment = entryName;
                 newEntry.content = `<history_story>${outputContent}</history_story>`;  // 使用AI的回复内容，添加history_story标签

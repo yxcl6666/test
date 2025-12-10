@@ -1604,25 +1604,30 @@ export class MemoryUI {
      */
     async resetAutoSummarize() {
         const context = this.getContext ? this.getContext() : getContext();
-        
+
         if (!context || !context.chat) {
             this.toastr?.warning('无法重置：聊天上下文不可用');
             return;
         }
 
-        const syncEnabled = $('#memory_auto_sync_world_info').prop('checked') || 
-                           this.settings?.memory?.autoSummarize?.syncWorldInfo || false;
-        
+        // 获取UI元素状态
+        const syncEnabled = $('#memory_auto_sync_world_info').prop('checked');
+        console.log(`[MemoryUI] resetAutoSummarize: UI syncEnabled = ${syncEnabled}`);
+        console.log(`[MemoryUI] resetAutoSummarize: Settings syncWorldInfo = ${this.settings?.memory?.autoSummarize?.syncWorldInfo}`);
+
         // 如果启用了同步，则强制从世界书同步
         if (syncEnabled) {
             console.log('[MemoryUI] 重置自动总结：强制从世界书同步进度');
+
+            // 强制重新扫描世界书
             const lastSummarized = await this.getLastSummarizedFloor(true);
-            
+
+            // 更新状态显示
             this.updateAutoSummarizeStatus();
-            
+
             const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
-            const nextFloor = (lastSummarized - 1) + interval;
-            
+            const nextFloor = lastSummarized + interval;
+
             if (lastSummarized > 0) {
                 this.toastr?.success(`已同步世界书进度！下次将在楼层 #${nextFloor + 1} 触发总结`);
             } else {
@@ -1630,7 +1635,7 @@ export class MemoryUI {
             }
             return;
         }
-        
+
         // 否则执行原逻辑：重置为当前楼层
         const currentFloor = context.chat.length - 1;
         
