@@ -1712,7 +1712,9 @@ export class MemoryUI {
         // currentFloor 是当前楼层索引，lastSummarized = currentFloor
         // 触发楼层 = currentFloor + (interval - 1)
         const triggerFloor = currentFloor + (interval - 1);
-        this.toastr?.success(`已重置！下次将在楼层 #${triggerFloor + 1} 触发总结（从 #${currentFloor + 1} 开始）`);
+        // 实际总结范围：currentFloor 到 triggerFloor（索引）
+        // 显示范围：#(currentFloor+1) 到 #(triggerFloor+1)
+        this.toastr?.success(`已重置！下次将在楼层 #${triggerFloor + 1} 触发总结（将总结 #${currentFloor + 1} 至 #${triggerFloor + 1}）`);
     }
     
     /**
@@ -1885,6 +1887,9 @@ export class MemoryUI {
                     console.log('[MemoryUI] 总结范围无效，不执行总结', { startIndex, endIndex });
                     return;
                 }
+
+                // 显示总结范围提示
+                this.toastr?.info(`开始自动总结：楼层 #${startIndex + 1} 至 #${endIndex + 1}...`);
             }
 
             // ---------------------------------------------------------
@@ -1953,26 +1958,18 @@ export class MemoryUI {
                 range: { start: startIndex, end: endIndex }
             };
 
-            // 添加详细日志，帮助调试内容选择设置
-            console.log('[MemoryUI] performAutoSummarizeDirect: 使用的内容选择设置:', {
-                chatSettings,
-                messageOptions,
-                startIndex,
-                endIndex,
-                hasUserMessages: (chatSettings.types?.user !== false),
-                hasAIMessages: (chatSettings.types?.assistant !== false),
-                includeHidden: messageOptions.includeHidden
-            });
-
             // 使用getMessages获取范围内的消息（遵循内容选择设置）
             const messages = getMessages(context.chat, messageOptions);
 
-            console.log('[MemoryUI] 根据内容选择设置收集到的消息数量:', messages.length);
-            console.log('[MemoryUI] 内容选择设置:', {
-                includeHidden: messageOptions.includeHidden,
-                types: messageOptions.types,
-                range: messageOptions.range
+            console.log('[MemoryUI] 自动总结执行范围:', {
+                startIndex,          // 开始索引（0-based）
+                endIndex,            // 结束索引（0-based）
+                displayStart: startIndex + 1,  // 显示开始楼层（1-based）
+                displayEnd: endIndex + 1,      // 显示结束楼层（1-based）
+                actualFloorCount: endIndex - startIndex + 1  // 实际楼层数
             });
+
+            console.log('[MemoryUI] 根据内容选择设置收集到的消息数量:', messages.length);
 
             if (messages.length === 0) {
                 console.log('[MemoryUI] 没有找到符合条件的消息');
