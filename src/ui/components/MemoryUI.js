@@ -2449,13 +2449,81 @@ export class MemoryUI {
 
             // 导入必要的函数
             const { getContext, extension_settings } = await import('../../../../../../extensions.js');
-            const { getMessages } = await import('../../utils/chatUtils.js');
+            const { getMessages, createVectorItem } = await import('../../utils/chatUtils.js');
             const { extractTagContent } = await import('../../utils/tagExtractor.js');
             const { eventBus } = await import('../../infrastructure/events/eventBus.instance.js');
             const { ProcessorFactory } = await import('../../core/pipeline/ProcessorFactory.js');
             const { TextPipeline } = await import('../../core/pipeline/TextPipeline.js');
             const settings = extension_settings.vectors_enhanced;
             const context = getContext();
+
+            // 检查主开关是否启用
+            if (!settings.master_enabled) {
+                console.log('[MemoryUI] performAutoSummarizeDirect: 主开关已禁用，跳过');
+                return false;
+            }
+
+            // ---------------------------------------------------------
+            // 自动向量化处理（追赶模式和手动追赶也需要）
+            // ---------------------------------------------------------
+            // 检查设置是否启用了自动向量化（默认为true）
+            const autoVectorizeEnabled = settings.memory?.autoSummarize?.autoVectorize !== false;
+
+            if (this.performVectorization && autoVectorizeEnabled) {
+                 try {
+                    console.log('[MemoryUI] performAutoSummarizeDirect: 开始自动向量化当前范围');
+
+                    // 获取范围内所有消息（用户+AI）
+                    const vectorizeOptions = {
+                        includeHidden: true, // 包含可能已经被标记为隐藏的消息
+                        types: { user: true, assistant: true },
+                        range: { start: startIndex, end: endIndex }
+                    };
+                    const messagesToVectorize = getMessages(context.chat, vectorizeOptions);
+
+                    if (messagesToVectorize.length > 0) {
+                        this.toastr?.info(`正在自动向量化楼层 #${startIndex + 1} 至 #${endIndex + 1} ...`);
+                        console.log('[MemoryUI] performAutoSummarizeDirect: 开始自动向量化范围:', startIndex, endIndex);
+
+                        // 获取标签提取规则
+                        const rules = settings.tag_extraction_rules || [];
+                        const items = messagesToVectorize.map(msg => {
+                             let extractedText = msg.text;
+                             // 应用标签提取规则 (如果不是首楼且不是用户消息)
+                             if (msg.index !== 0 && !msg.is_user && rules && rules.length > 0) {
+                                 extractedText = extractTagContent(msg.text, rules, settings.content_blacklist || []);
+                             }
+
+                             return createVectorItem(msg, extractedText, extractedText);
+                        });
+
+                        // 构造特殊的任务名
+                        const taskName = isCatchUp
+                            ? `智能追赶向量化 #${startIndex + 1}-${endIndex + 1}`
+                            : `自动向量化 #${startIndex + 1}-${endIndex + 1}`;
+
+                        // 调用向量化 (isIncremental=true)
+                        await this.performVectorization(
+                            settings.selected_content,
+                            context.chatId,
+                            true,
+                            items,
+                            {
+                                taskType: isCatchUp ? 'catchup_vectorization' : 'auto_vectorization',
+                                customTaskName: taskName,
+                                skipDeduplication: false
+                            }
+                        );
+
+                        console.log('[MemoryUI] performAutoSummarizeDirect: 自动向量化完成');
+                    }
+                 } catch (vecError) {
+                     console.error('[MemoryUI] performAutoSummarizeDirect: 自动向量化失败:', vecError);
+                     this.toastr?.error('自动向量化失败: ' + vecError.message);
+                     // 不中断总结流程
+                 }
+            }
+            // ---------------------------------------------------------
 
             // 获取聊天设置，用于构建消息过滤选项
             const chatSettings = settings.selected_content.chat || {};
