@@ -25,6 +25,7 @@ import {
   renderExtensionTemplateAsync,
 } from '../../../extensions.js';
 import { oai_settings } from '../../../openai.js';
+import { initVectorizationSettings } from './src/utils/initVectorizationSettings.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from '../../../popup.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
@@ -1357,9 +1358,9 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         taskType: taskType, // Pass taskType for summary vectorization detection
         vectorizationSettings: {
           source: contentSettings.chat?.source || settings.source,
-          chunk_size: contentSettings.chat?.chunk_size || settings.chunk_size,
-          overlap_percent: contentSettings.chat?.overlap_percent || settings.overlap_percent,
-          force_chunk_delimiter: contentSettings.chat?.force_chunk_delimiter || settings.force_chunk_delimiter
+          chunk_size: parseInt(contentSettings.chat?.chunk_size || settings.chunk_size) || 1000,
+          overlap_percent: parseInt(contentSettings.chat?.overlap_percent || settings.overlap_percent) || 10,
+          force_chunk_delimiter: contentSettings.chat?.force_chunk_delimiter || settings.force_chunk_delimiter || false
         }
       };
 
@@ -4316,5 +4317,14 @@ async function toggleMessageRangeVisibility(startIndex, endIndex, hide) {
     console.error('批量切换消息可见性失败:', error);
     toastr.error('操作失败');
   }
+}
+
+// 初始化向量化设置
+// 确保在DOM加载完成后执行
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initVectorizationSettings);
+} else {
+  // DOM已经加载完成
+  setTimeout(initVectorizationSettings, 100);
 }
 

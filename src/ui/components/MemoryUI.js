@@ -2485,12 +2485,19 @@ export class MemoryUI {
                         };
 
                         // 日志记录使用的配置
+                        const actualChunkSize = parseInt(settings.chunk_size) || 1000;
+                        const actualOverlap = parseInt(settings.overlap_percent) || 10;
+
                         console.log('[MemoryUI] performAutoSummarizeDirect: 使用向量化配置:', {
-                            chunkSize: settings.chunk_size || 1000,
-                            overlap: settings.overlap_percent || 10,
+                            chunkSize: actualChunkSize,
+                            overlap: actualOverlap,
                             includeHidden: vectorizationContentSettings.chat?.include_hidden || false,
                             types: vectorizationContentSettings.chat?.types || { user: true, assistant: true }
                         });
+
+                        // 将配置添加到 vectorizationContentSettings 中，确保向量化处理器能获取到
+                        vectorizationContentSettings.chat.chunk_size = actualChunkSize;
+                        vectorizationContentSettings.chat.overlap_percent = actualOverlap;
                     }
 
                     // 获取范围内所有消息（使用配置的设置）
