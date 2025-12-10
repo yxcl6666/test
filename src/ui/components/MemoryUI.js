@@ -1261,9 +1261,17 @@ export class MemoryUI {
     initializeChatFloorMonitor() {
         // 立即更新一次
         this.updateChatFloorCount();
-        
+
         // 执行数据迁移
         this.migrateLastSummarizedFloor();
+
+        // 如果自动总结已启用，更新状态显示
+        if ($('#memory_auto_summarize_enabled').prop('checked')) {
+            // 延迟一下，确保所有UI元素都已加载
+            setTimeout(() => {
+                this.updateAutoSummarizeStatus();
+            }, 500);
+        }
         
         // 监听SillyTavern的消息事件
         if (this.eventSource && this.event_types) {
@@ -1282,12 +1290,22 @@ export class MemoryUI {
             
             // 监听消息删除事件
             this.eventSource.on(this.event_types.MESSAGE_DELETED, () => {
-                setTimeout(() => this.updateChatFloorCount(), 100);
+                setTimeout(() => {
+                    this.updateChatFloorCount();
+                    if ($('#memory_auto_summarize_enabled').prop('checked')) {
+                        this.updateAutoSummarizeStatus();
+                    }
+                }, 100);
             });
-            
+
             // 监听消息编辑事件
             this.eventSource.on(this.event_types.MESSAGE_EDITED, () => {
-                setTimeout(() => this.updateChatFloorCount(), 100);
+                setTimeout(() => {
+                    this.updateChatFloorCount();
+                    if ($('#memory_auto_summarize_enabled').prop('checked')) {
+                        this.updateAutoSummarizeStatus();
+                    }
+                }, 100);
             });
             
             // 监听聊天切换事件
@@ -1462,8 +1480,9 @@ export class MemoryUI {
     }
     
     /**
-     * 智能获取上次总结的楼层
+     * 智能获取上次总结的楼层 (已弃用)
      * 根据当前楼层和间隔，智能计算应该从哪个楼层开始计数
+     * @deprecated 此方法已弃用，请使用 getLastSummarizedFloor
      */
     async getSmartLastSummarizedFloor(currentFloor, interval) {
         try {
