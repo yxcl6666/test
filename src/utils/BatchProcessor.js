@@ -51,6 +51,43 @@ export class BatchProcessor {
     }
 
     /**
+     * 串行处理数组项（用于需要顺序的场景）
+     * @param {Array} items 要处理的项目
+     * @param {Function} processor 处理函数
+     * @param {Function} onProgress 进度回调
+     * @returns {Promise<Array>} 处理结果
+     */
+    async processSerially(items, processor, onProgress) {
+        const results = [];
+        const total = items.length;
+
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+
+            // 处理当前项
+            const result = await this.wrapInTimeout(() => processor(item), 5000); // 5秒超时
+            results.push(result);
+
+            // 进度回调
+            if (onProgress) {
+                onProgress(i + 1, total);
+            }
+
+            // 让出控制权
+            if ((i + 1) % this.yieldAfter === 0) {
+                await this.yield();
+            }
+
+            // 项间延迟
+            if (i < items.length - 1) {
+                await this.delay(this.batchDelay);
+            }
+        }
+
+        return results;
+    }
+
+    /**
      * 处理单个批次
      * @param {Array} batch 批次项目
      * @param {Function} processor 处理函数
@@ -58,7 +95,7 @@ export class BatchProcessor {
      */
     async processBatch(batch, processor) {
         const promises = batch.map(item =>
-            this.wrapInTimeout(processor(item))
+            this.wrapInTimeout(() => processor(item))
         );
 
         return Promise.all(promises);
@@ -66,7 +103,7 @@ export class BatchProcessor {
 
     /**
      * 将处理函数包装在超时中，避免长时间阻塞
-     * @param {Function} fn 处理函数
+     * @param {Function} fn 处理函数（返回Promise）
      * @param {number} timeout 超时时间（毫秒）
      * @returns {Promise} 包装后的Promise
      */
@@ -75,6 +112,13 @@ export class BatchProcessor {
             const timer = setTimeout(() => {
                 reject(new Error('处理超时'));
             }, timeout);
+
+            // 确保fn是函数
+            if (typeof fn !== 'function') {
+                clearTimeout(timer);
+                reject(new Error('fn must be a function'));
+                return;
+            }
 
             Promise.resolve(fn())
                 .then(result => {

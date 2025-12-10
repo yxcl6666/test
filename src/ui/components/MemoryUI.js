@@ -2351,8 +2351,8 @@ export class MemoryUI {
 
         console.log(`[MemoryUI] 计划处理 ${batches.length} 个追赶批次`);
 
-        // 使用批处理器处理批次
-        await catchUpProcessor.processBatches(
+        // 使用串行处理器处理批次（确保顺序）
+        await catchUpProcessor.processSerially(
             batches,
             async (batch) => {
                 console.log(`[MemoryUI] 追赶批次 ${catchUpCount + 1}:`, batch);
@@ -2366,6 +2366,7 @@ export class MemoryUI {
                 catchUpCount++;
 
                 // 更新 lastSummarized 为下一个要开始的楼层号
+                // 注意：这里应该使用实际的 batch.endIndex 而不是预先计算的
                 const oldLastSummarized = lastSummarized;
                 lastSummarized = batch.endIndex + 2;
                 this.saveToChatMetadata('lastSummarizedFloor', lastSummarized);
