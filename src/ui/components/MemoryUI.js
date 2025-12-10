@@ -1904,7 +1904,9 @@ export class MemoryUI {
                 }
 
                 // 显示总结范围提示
-                this.toastr?.info(`开始自动总结：楼层 #${startIndex + 1} 至 #${endIndex + 1}...`);
+                // 当有保留层数时，结束楼层需要调整显示
+                const displayEndFloor = endIndex + 1 - (keepCount > 0 ? keepCount - 1 : 0);
+                this.toastr?.info(`正在总结：楼层 #${startIndex + 1} 至 #${displayEndFloor}`);
             }
 
             // ---------------------------------------------------------
@@ -2128,7 +2130,9 @@ export class MemoryUI {
                 // endIndex+1 是结束楼层号，再+1 是下一个开始楼层号
                 this.saveToChatMetadata('lastSummarizedFloor', endIndex + 2);
                 
-                this.toastr?.success(`自动总结完成：楼层 #${startIndex + 1} 至 #${endIndex + 1}`);
+                // 当有保留层数时，结束楼层需要调整显示
+                const displayEndFloor = endIndex + 1 - (keepCount > 0 ? keepCount - 1 : 0);
+                this.toastr?.success(`自动总结完成：楼层 #${startIndex + 1} 至 #${displayEndFloor}`);
                 this.updateAutoSummarizeStatus();
                 
                 // 检查是否需要隐藏楼层
