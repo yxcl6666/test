@@ -1392,23 +1392,23 @@ export class MemoryUI {
         const currentFloor = context.chat.length - 1;
         const chatId = context.chatId || 'unknown';
 
-        // 使用传入的 lastSummarized 值
-        const lastSummarized = givenLastSummarized;
-        const nextFloor = lastSummarized + interval;
+        // 使用传入的 lastSummarized 值（这是下一个开始的索引）
+        // 触发楼层 = lastSummarized + (interval - 1)
+        const triggerFloor = givenLastSummarized + (interval - 1);
         const syncEnabled = $('#memory_auto_sync_world_info').prop('checked');
 
         console.log('[MemoryUI] forceUpdateAutoSummarizeStatus:', {
             chatId,
             currentFloor,
             interval,
-            lastSummarized,
-            nextFloor,
-            nextFloorDisplay: nextFloor + 1,
+            givenLastSummarized,
+            triggerFloor,
+            triggerFloorDisplay: triggerFloor + 1,
             syncEnabled
         });
 
-        // 更新下次触发楼层显示
-        $('#memory_next_auto_summarize_floor').text(`#${nextFloor + 1}`);
+        // 更新下次触发楼层显示（转换为1-based）
+        $('#memory_next_auto_summarize_floor').text(`#${triggerFloor + 1}`);
 
         // 更新重置按钮的提示文本
         const resetButton = $('#memory_reset_auto_summarize');
@@ -1439,21 +1439,10 @@ export class MemoryUI {
 
         // 不再进行智能初始化，让用户正常使用即可
 
-        // 判断 lastSummarized 是否代表实际总结的最后一层
-        // 当从世界书读取时，lastSummarized = 最后一层 + 1
-        // 当重置时，lastSummarized = 当前楼层（实际还未总结）
-        const isResetValue = lastSummarized === currentFloor;
-
-        let nextFloor;
-        if (isResetValue) {
-            // 重置情况：从当前楼层开始计算
-            nextFloor = lastSummarized + interval;
-        } else {
-            // 正常情况：从最后总结的层开始计算
-            const lastActualFloor = lastSummarized - 1;
-            nextFloor = lastActualFloor + interval;
-        }
-
+        // lastSummarized 总是下一个要开始总结的索引（0-based）
+        // 触发楼层 = lastSummarized + (interval - 1)
+        // 例如：总结完0-4后，lastSummarized=5，间隔5，触发在5+4=9层
+        const triggerFloor = lastSummarized + (interval - 1);
         const syncEnabled = $('#memory_auto_sync_world_info').prop('checked');
 
         console.log('[MemoryUI] updateAutoSummarizeStatus:', {
@@ -1461,14 +1450,13 @@ export class MemoryUI {
             currentFloor,
             interval,
             lastSummarized,
-            isResetValue,
-            nextFloor,
-            nextFloorDisplay: nextFloor + 1,
+            triggerFloor,
+            triggerFloorDisplay: triggerFloor + 1,
             syncEnabled
         });
 
-        // 更新下次触发楼层显示
-        $('#memory_next_auto_summarize_floor').text(`#${nextFloor + 1}`);
+        // 更新下次触发楼层显示（转换为1-based）
+        $('#memory_next_auto_summarize_floor').text(`#${triggerFloor + 1}`);
 
         // 更新重置按钮的提示文本
         const resetButton = $('#memory_reset_auto_summarize');
@@ -1698,12 +1686,13 @@ export class MemoryUI {
             await this.forceUpdateAutoSummarizeStatus(lastSummarized);
 
             const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
-            const nextFloor = lastSummarized + interval;
+            // lastSummarized 是下一个开始的索引，触发楼层 = lastSummarized + (interval - 1)
+            const triggerFloor = lastSummarized + (interval - 1);
 
             if (lastSummarized > 0) {
-                this.toastr?.success(`已同步世界书进度！下次将在楼层 #${nextFloor + 1} 触发总结`);
+                this.toastr?.success(`已同步世界书进度！下次将在楼层 #${triggerFloor + 1} 触发总结（总结 #${lastSummarized} 至 #${triggerFloor}）`);
             } else {
-                this.toastr?.info(`已重置（未在世界书中发现进度），下次将在楼层 #${nextFloor + 1} 触发总结`);
+                this.toastr?.info(`已重置（未在世界书中发现进度），下次将在楼层 #${triggerFloor + 1} 触发总结`);
             }
             return;
         }
@@ -1720,8 +1709,10 @@ export class MemoryUI {
 
         // 显示成功提示
         const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
-        const nextFloor = currentFloor + interval;
-        this.toastr?.success(`已重置！下次将在楼层 #${nextFloor + 1} 触发总结`);
+        // currentFloor 是当前楼层索引，lastSummarized = currentFloor
+        // 触发楼层 = currentFloor + (interval - 1)
+        const triggerFloor = currentFloor + (interval - 1);
+        this.toastr?.success(`已重置！下次将在楼层 #${triggerFloor + 1} 触发总结（从 #${currentFloor + 1} 开始）`);
     }
     
     /**
