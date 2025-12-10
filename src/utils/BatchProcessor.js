@@ -52,6 +52,12 @@ export class BatchProcessor {
 
     /**
      * 串行处理数组项（用于需要顺序的场景）
+     * 特别适用于智能追赶，需要考虑：
+     * - 慢速API（20 tokens/s）
+     * - 大文本总结（可能需要1000-3000 tokens）
+     * - 向量化处理时间
+     * - 网络延迟
+     *
      * @param {Array} items 要处理的项目
      * @param {Function} processor 处理函数
      * @param {Function} onProgress 进度回调
@@ -65,7 +71,7 @@ export class BatchProcessor {
             const item = items[i];
 
             // 处理当前项
-            const result = await this.wrapInTimeout(() => processor(item), 120000); // 2分钟超时
+            const result = await this.wrapInTimeout(() => processor(item), 300000); // 5分钟超时（适合慢速API）
             results.push(result);
 
             // 进度回调

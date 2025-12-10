@@ -1818,7 +1818,9 @@ export class MemoryUI {
 
             // 特殊处理超时错误
             if (error.message.includes('处理超时')) {
-                this.toastr?.error('处理超时，可能是数据量过大或网络较慢。建议：\n1. 减小块大小设置\n2. 关闭自动向量化\n3. 手动分批处理');
+                const timeoutMatch = error.message.match(/\((\d+)秒\)/);
+                const timeoutSeconds = timeoutMatch ? timeoutMatch[1] : '未知';
+                this.toastr?.error(`处理超时（${timeoutSeconds}秒），可能是：\n• 数据量过大\n• API响应速度过慢\n• 网络连接不稳定\n\n建议：\n1. 减小块大小设置（如512）\n2. 关闭自动向量化\n3. 使用更快的API服务`);
             } else {
                 this.toastr?.error('智能追赶失败: ' + error.message);
             }
