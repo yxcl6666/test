@@ -65,7 +65,7 @@ export class BatchProcessor {
             const item = items[i];
 
             // 处理当前项
-            const result = await this.wrapInTimeout(() => processor(item), 5000); // 5秒超时
+            const result = await this.wrapInTimeout(() => processor(item), 120000); // 2分钟超时
             results.push(result);
 
             // 进度回调
@@ -107,10 +107,10 @@ export class BatchProcessor {
      * @param {number} timeout 超时时间（毫秒）
      * @returns {Promise} 包装后的Promise
      */
-    wrapInTimeout(fn, timeout = 100) {
+    wrapInTimeout(fn, timeout = 30000) { // 默认30秒超时
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
-                reject(new Error('处理超时'));
+                reject(new Error(`处理超时（${timeout/1000}秒）`));
             }, timeout);
 
             // 确保fn是函数

@@ -1815,7 +1815,13 @@ export class MemoryUI {
 
         } catch (error) {
             console.error('[MemoryUI] 智能追赶失败:', error);
-            this.toastr?.error('智能追赶失败: ' + error.message);
+
+            // 特殊处理超时错误
+            if (error.message.includes('处理超时')) {
+                this.toastr?.error('处理超时，可能是数据量过大或网络较慢。建议：\n1. 减小块大小设置\n2. 关闭自动向量化\n3. 手动分批处理');
+            } else {
+                this.toastr?.error('智能追赶失败: ' + error.message);
+            }
         } finally {
             // 清除标志
             this.isAutoSummarizing = false;
