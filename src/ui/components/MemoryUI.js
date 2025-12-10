@@ -377,6 +377,9 @@ export class MemoryUI {
 
         // Vectorize summary button handler
         $('#memory_vectorize_summary').off('click').on('click', () => this.vectorizeChatLore());
+
+        // Smart catch up button handler
+        $('#memory_smart_catch_up').off('click').on('click', () => this.handleSmartCatchUp());
         
         // Auto-summarize settings
         $('#memory_auto_summarize_enabled').off('change').on('change', (e) => {
@@ -1724,7 +1727,101 @@ export class MemoryUI {
         // 显示范围：#(currentFloor+1) 到 #(triggerFloor+1)
         this.toastr?.success(`已重置！下次将在楼层 #${triggerFloor + 1} 触发总结（将总结 #${currentFloor + 1} 至 #${triggerFloor + 1}）`);
     }
-    
+
+    /**
+     * Handle smart catch up button click
+     */
+    async handleSmartCatchUp() {
+        try {
+            // 检查主开关是否启用
+            if (!this.settings?.master_enabled) {
+                this.toastr?.warning('主开关未启用，请先启用扩展');
+                return;
+            }
+
+            // 检查聊天上下文
+            const context = this.getContext ? this.getContext() : getContext();
+            if (!context || !context.chat || context.chat.length < 2) {
+                this.toastr?.warning('聊天上下文不可用或消息太少');
+                return;
+            }
+
+            // 获取配置
+            const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
+            const keepCount = parseInt($('#memory_auto_summarize_count').val()) || 6;
+            const currentFloor = context.chat.length - 1;
+
+            // 获取上次总结的楼层
+            const lastSummarized = await this.getLastSummarizedFloor();
+
+            // 计算安全限制（不可逾越的红线）
+            const safeLimit = currentFloor - keepCount;
+
+            console.log('[MemoryUI] 手动触发智能追赶:', {
+                currentFloor,
+                lastSummarized,
+                interval,
+                keepCount,
+                safeLimit,
+                distance: currentFloor - lastSummarized
+            });
+
+            // 检查是否需要追赶
+            if (lastSummarized + interval > safeLimit) {
+                const currentLastFloor = lastSummarized - 1;
+                if (currentLastFloor < 0) {
+                    this.toastr?.info('还没有进行过任何总结，请先发送一些消息');
+                } else {
+                    this.toastr?.info(`没有需要追赶的内容。上次总结到了第 ${currentLastFloor} 层`);
+                }
+                return;
+            }
+
+            // 计算需要追赶的批次
+            const maxEndFloor = safeLimit;
+            const willCatchUpFloors = Math.floor((maxEndFloor - lastSummarized) / interval);
+
+            // 如果正在自动总结中，提示用户
+            if (this.isAutoSummarizing) {
+                this.toastr?.warning('正在执行自动总结，请稍后再试');
+                return;
+            }
+
+            // 确认是否执行追赶
+            const startFloor = lastSummarized;
+            const endFloor = Math.min(lastSummarized + (willCatchUpFloors * interval) - 1, maxEndFloor);
+            const confirmation = `即将智能追赶第 ${startFloor} 至 ${endFloor} 层（共 ${willCatchUpFloors} 个批次）。是否继续？\n\n` +
+                                `每批次 ${interval} 层，将保留最近 ${keepCount} 层不被总结。`;
+
+            if (!confirm(confirmation)) {
+                return;
+            }
+
+            // 显示加载状态
+            this.showLoading();
+            this.toastr?.info('开始智能追赶未总结的历史内容...');
+
+            // 设置标志，防止并发执行
+            this.isAutoSummarizing = true;
+
+            // 执行追赶
+            await this.continueSmartCatchUp();
+
+            // 完成提示
+            const newLastSummarized = await this.getLastSummarizedFloor();
+            const finalSummarizedFloor = newLastSummarized - 1;
+            this.toastr?.success(`智能追赶完成！已总结至第 ${finalSummarizedFloor} 层`);
+
+        } catch (error) {
+            console.error('[MemoryUI] 智能追赶失败:', error);
+            this.toastr?.error('智能追赶失败: ' + error.message);
+        } finally {
+            // 清除标志
+            this.isAutoSummarizing = false;
+            this.hideLoading();
+        }
+    }
+
     /**
      * Check if auto-summarize should be triggered
      */
@@ -2634,6 +2731,7 @@ export class MemoryUI {
         $('#memory_summarize_btn').off('click');
         $('#memory_api_source').off('change');
         $('#memory_vectorize_summary').off('click');
+        $('#memory_smart_catch_up').off('click');
         // Prompt buttons removed
         $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_format, #memory_detail_level, #memory_max_tokens').off('change');
 
