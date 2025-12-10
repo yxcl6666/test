@@ -1356,10 +1356,10 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         source: 'chat_vectorization',
         taskType: taskType, // Pass taskType for summary vectorization detection
         vectorizationSettings: {
-          source: settings.source,
-          chunk_size: settings.chunk_size,
-          overlap_percent: settings.overlap_percent,
-          force_chunk_delimiter: settings.force_chunk_delimiter
+          source: contentSettings.chat?.source || settings.source,
+          chunk_size: contentSettings.chat?.chunk_size || settings.chunk_size,
+          overlap_percent: contentSettings.chat?.overlap_percent || settings.overlap_percent,
+          force_chunk_delimiter: contentSettings.chat?.force_chunk_delimiter || settings.force_chunk_delimiter
         }
       };
 

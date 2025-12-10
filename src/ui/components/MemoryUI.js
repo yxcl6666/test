@@ -2333,7 +2333,7 @@ export class MemoryUI {
         // safeLimit 是索引（0-based），需要转换为楼层号进行比较
         const safeLimitFloor = safeLimit + 1;  // 转换为楼层号
         while (lastSummarized + interval - 1 <= safeLimitFloor && catchUpCount < maxCatchUpPerBatch) {
-            const startIndex = lastSummarized - 1;  // 转换为索引（0-based）
+            const startIndex = Math.max(0, lastSummarized - 1);  // 转换为索引（0-based），确保不小于0
             const endIndex = startIndex + interval - 1;
 
             console.log(`[MemoryUI] 追赶批次 ${catchUpCount + 1}:`, {
