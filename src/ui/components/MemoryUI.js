@@ -2486,15 +2486,21 @@ export class MemoryUI {
 
                         // 日志记录使用的配置
                         console.log('[MemoryUI] performAutoSummarizeDirect: 使用向量化配置:', {
-                            chunkSize: vectorizationContentSettings.chat?.chunk_size || 'default',
-                            overlap: vectorizationContentSettings.chat?.overlap || 'default',
+                            chunkSize: settings.chunk_size || 1000,
+                            overlap: settings.overlap_percent || 10,
                             includeHidden: vectorizationContentSettings.chat?.include_hidden || false,
                             types: vectorizationContentSettings.chat?.types || { user: true, assistant: true }
                         });
                     }
 
                     // 获取范围内所有消息（使用配置的设置）
-                    const messagesToVectorize = getMessages(context.chat, vectorizationContentSettings);
+                    // 构建正确的 options 对象
+                    const vectorizeOptions = {
+                        includeHidden: vectorizationContentSettings.chat?.include_hidden || false,
+                        types: vectorizationContentSettings.chat?.types || { user: true, assistant: true },
+                        range: vectorizationContentSettings.chat?.range
+                    };
+                    const messagesToVectorize = getMessages(context.chat, vectorizeOptions);
 
                     if (messagesToVectorize.length > 0) {
                         this.toastr?.info(`正在自动向量化楼层 #${startIndex + 1} 至 #${endIndex + 1} ...`);
