@@ -1864,6 +1864,20 @@ export class MemoryUI {
             let startIndex = lastSummarized - 1;  // lastSummarized 是楼层号，转换为索引
             let endIndex = Math.min(currentFloor - keepCount, startIndex + interval - 1);
 
+            console.log('[MemoryUI] 范围计算详情:', {
+                currentFloor,           // 当前楼层（1-based）
+                currentFloorIndex: currentFloor - 1,  // 当前索引（0-based）
+                keepCount,
+                interval,
+                lastSummarized,         // 下次开始的楼层号（1-based）
+                startIndexCalc: `${lastSummarized} - 1 = ${startIndex}`,
+                endIndexCalc1: `currentFloor - keepCount = ${currentFloor} - ${keepCount} = ${currentFloor - keepCount}`,
+                endIndexCalc2: `startIndex + interval - 1 = ${startIndex} + ${interval} - 1 = ${startIndex + interval - 1}`,
+                endIndex,
+                displayStart: startIndex + 1,
+                displayEnd: endIndex + 1
+            });
+
             if (needsCatchUp) {
                 // 追赶模式：调用 continueSmartCatchUp
                 console.log('[MemoryUI] 进入追赶模式');
