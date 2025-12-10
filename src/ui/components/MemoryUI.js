@@ -2185,7 +2185,15 @@ export class MemoryUI {
             const startIndex = lastSummarized;
             const endIndex = lastSummarized + interval - 1;
 
-            console.log(`[MemoryUI] 追赶批次 ${catchUpCount + 1}: 总结 ${startIndex} 到 ${endIndex}`);
+            console.log(`[MemoryUI] 追赶批次 ${catchUpCount + 1}:`, {
+                lastSummarized,
+                startIndex,
+                endIndex,
+                displayStart: startIndex + 1,
+                displayEnd: endIndex + 1,
+                interval,
+                safeLimit
+            });
 
             // 显示当前批次提示
             const currentBatch = catchUpCount + 1;
