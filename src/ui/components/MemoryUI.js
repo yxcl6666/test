@@ -1360,6 +1360,48 @@ export class MemoryUI {
     }
 
     /**
+     * Force update auto-summarize status with given lastSummarized value
+     */
+    async forceUpdateAutoSummarizeStatus(givenLastSummarized) {
+        const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
+        const context = this.getContext ? this.getContext() : getContext();
+
+        if (!context || !context.chat) {
+            $('#memory_next_auto_summarize_floor').text('-');
+            return;
+        }
+
+        const currentFloor = context.chat.length - 1;
+        const chatId = context.chatId || 'unknown';
+
+        // 使用传入的 lastSummarized 值
+        const lastSummarized = givenLastSummarized;
+        const nextFloor = lastSummarized + interval;
+        const syncEnabled = $('#memory_auto_sync_world_info').prop('checked');
+
+        console.log('[MemoryUI] forceUpdateAutoSummarizeStatus:', {
+            chatId,
+            currentFloor,
+            interval,
+            lastSummarized,
+            nextFloor,
+            nextFloorDisplay: nextFloor + 1,
+            syncEnabled
+        });
+
+        // 更新下次触发楼层显示
+        $('#memory_next_auto_summarize_floor').text(`#${nextFloor + 1}`);
+
+        // 更新重置按钮的提示文本
+        const resetButton = $('#memory_reset_auto_summarize');
+        if (syncEnabled) {
+            resetButton.attr('title', '重置并重新同步世界书进度');
+        } else {
+            resetButton.attr('title', '重置自动总结基准点为当前楼层');
+        }
+    }
+
+    /**
      * Update auto-summarize status display
      */
     async updateAutoSummarizeStatus() {
@@ -1394,6 +1436,8 @@ export class MemoryUI {
             nextFloor = lastActualFloor + interval;
         }
 
+        const syncEnabled = $('#memory_auto_sync_world_info').prop('checked');
+
         console.log('[MemoryUI] updateAutoSummarizeStatus:', {
             chatId,
             currentFloor,
@@ -1402,10 +1446,19 @@ export class MemoryUI {
             isResetValue,
             nextFloor,
             nextFloorDisplay: nextFloor + 1,
-            syncEnabled: $('#memory_auto_sync_world_info').prop('checked')
+            syncEnabled
         });
 
+        // 更新下次触发楼层显示
         $('#memory_next_auto_summarize_floor').text(`#${nextFloor + 1}`);
+
+        // 更新重置按钮的提示文本
+        const resetButton = $('#memory_reset_auto_summarize');
+        if (syncEnabled) {
+            resetButton.attr('title', '重置并重新同步世界书进度');
+        } else {
+            resetButton.attr('title', '重置自动总结基准点为当前楼层');
+        }
     }
     
     /**
@@ -1622,8 +1675,8 @@ export class MemoryUI {
             // 强制重新扫描世界书
             const lastSummarized = await this.getLastSummarizedFloor(true);
 
-            // 更新状态显示
-            this.updateAutoSummarizeStatus();
+            // 更新状态显示（传入forceSync=true确保使用最新的lastSummarized）
+            await this.forceUpdateAutoSummarizeStatus(lastSummarized);
 
             const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
             const nextFloor = lastSummarized + interval;
@@ -1638,14 +1691,14 @@ export class MemoryUI {
 
         // 否则执行原逻辑：重置为当前楼层
         const currentFloor = context.chat.length - 1;
-        
+
         // 保存当前楼层作为新的基准点
         console.log('[MemoryUI] 重置自动总结基准点为当前楼层:', currentFloor);
         this.saveToChatMetadata('lastSummarizedFloor', currentFloor);
-        
-        // 更新UI显示
-        this.updateAutoSummarizeStatus();
-        
+
+        // 更新UI显示（传入currentFloor作为lastSummarized）
+        await this.forceUpdateAutoSummarizeStatus(currentFloor);
+
         // 显示成功提示
         const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
         const nextFloor = currentFloor + interval;
