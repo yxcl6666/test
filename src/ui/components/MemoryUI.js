@@ -1943,55 +1943,80 @@ export class MemoryUI {
             }
             // ---------------------------------------------------------
             
-            // 收集要总结的AI消息
-            const aiMessages = [];
-            
-            // 从startIndex开始，到endIndex结束（包含），收集所有AI消息
-            for (let i = startIndex; i <= endIndex; i++) {
-                const msg = context.chat[i];
-                if (msg && !msg.is_user && !msg.is_system) {
-                    // 这是AI消息
-                    aiMessages.push({
-                        ...msg,
-                        index: i
-                    });
-                }
-            }
-            
-            console.log('[MemoryUI] 收集到的AI消息数量:', aiMessages.length);
-            
-            if (aiMessages.length === 0) {
-                console.log('[MemoryUI] 没有找到AI消息');
-                this.toastr?.warning('没有找到足够的AI消息进行总结');
+            // 获取聊天设置，用于构建消息过滤选项
+            const chatSettings = settings.selected_content.chat || {};
+
+            // 构建消息过滤选项（遵循内容选择设置）
+            const messageOptions = {
+                includeHidden: chatSettings.include_hidden || false,
+                types: chatSettings.types || { user: true, assistant: true },
+                range: { start: startIndex, end: endIndex }
+            };
+
+            // 添加详细日志，帮助调试内容选择设置
+            console.log('[MemoryUI] performAutoSummarizeDirect: 使用的内容选择设置:', {
+                chatSettings,
+                messageOptions,
+                startIndex,
+                endIndex,
+                hasUserMessages: (chatSettings.types?.user !== false),
+                hasAIMessages: (chatSettings.types?.assistant !== false),
+                includeHidden: messageOptions.includeHidden
+            });
+
+            // 使用getMessages获取范围内的消息（遵循内容选择设置）
+            const messages = getMessages(context.chat, messageOptions);
+
+            console.log('[MemoryUI] 根据内容选择设置收集到的消息数量:', messages.length);
+            console.log('[MemoryUI] 内容选择设置:', {
+                includeHidden: messageOptions.includeHidden,
+                types: messageOptions.types,
+                range: messageOptions.range
+            });
+
+            if (messages.length === 0) {
+                console.log('[MemoryUI] 没有找到符合条件的消息');
+                this.toastr?.warning('没有找到符合条件的消息进行总结');
                 return;
             }
-            
+
             // 调试：显示收集到的消息
-            console.log('[MemoryUI] 收集到的AI消息详情:', aiMessages.map(msg => ({
+            console.log('[MemoryUI] 收集到的消息详情:', messages.map(msg => ({
                 index: msg.index,
-                hasText: !!msg.text,
-                hasMes: !!msg.mes,
-                textLength: (msg.text || '').length,
-                mesLength: (msg.mes || '').length
+                is_user: msg.is_user,
+                is_system: msg.is_system,
+                textLength: (msg.text || '').length
             })));
-            
-            // 处理并格式化AI消息
-            const chatTexts = aiMessages.map(msg => {
-                // 获取消息文本（SillyTavern使用mes属性）
-                const messageText = msg.mes || msg.text || '';
-                
+
+            // 处理并格式化消息（使用与向量化相同的逻辑）
+            const chatTexts = messages.map(msg => {
+                // 获取消息文本
+                const messageText = msg.text || '';
+
                 if (!messageText) {
-                    console.warn(`[MemoryUI] 楼层 #${msg.index + 1} 的AI消息为空`);
-                    return `#${msg.index + 1} [AI]: （空消息）`;
+                    const msgType = msg.is_user ? '用户' : (msg.is_system ? '系统' : 'AI');
+                    console.warn(`[MemoryUI] 楼层 #${msg.index + 1} 的${msgType}消息为空`);
+                    return `#${msg.index + 1} [${msgType}]: （空消息）`;
                 }
-                
-                // 对AI消息应用标签提取规则
-                const extractedText = extractTagContent(messageText, rules, this.settings.content_blacklist || []);
-                return `#${msg.index + 1} [AI]: ${extractedText}`;
+
+                // 对消息应用标签提取规则（用户消息和系统消息不应用标签）
+                const applyTagsToFirstMessage = chatSettings.apply_tags_to_first_message || false;
+                let extractedText;
+
+                if ((msg.index === 0 && !applyTagsToFirstMessage) || msg.is_user === true || msg.is_system === true) {
+                    // 用户消息、系统消息或首楼消息不应用标签提取
+                    extractedText = messageText;
+                } else {
+                    // AI消息应用标签提取规则
+                    extractedText = extractTagContent(messageText, rules, this.settings.content_blacklist || []);
+                }
+
+                const msgType = msg.is_user ? '用户' : (msg.is_system ? '系统' : 'AI');
+                return `#${msg.index + 1} [${msgType}]: ${extractedText}`;
             }).join('\n\n');
-            
+
             // 添加楼层信息头部
-            const headerInfo = `【自动总结：楼层 #${startIndex + 1} 至 #${endIndex + 1}，共 ${aiMessages.length} 条AI消息】\n\n`;
+            const headerInfo = `【自动总结：楼层 #${startIndex + 1} 至 #${endIndex + 1}，共 ${messages.length} 条消息】\n\n`;
             const contentWithHeader = headerInfo + chatTexts;
             
             // 调试：检查最终内容
@@ -2006,12 +2031,16 @@ export class MemoryUI {
             summaryFormat = summaryFormat.replace('{{length}}', detailLevels[detailLevel]);
             
             // 临时存储楼层信息
-            this._tempFloorRange = { 
-                start: startIndex, 
-                end: endIndex, 
-                count: aiMessages.length,
+            this._tempFloorRange = {
+                start: startIndex,
+                end: endIndex,
+                count: messages.length,
                 isAutoSummarize: true,
-                isAIOnly: true  // 标记这是仅AI消息的总结
+                messageTypes: {
+                    user: messages.filter(m => m.is_user).length,
+                    ai: messages.filter(m => !m.is_user && !m.is_system).length,
+                    system: messages.filter(m => m.is_system).length
+                }
             };
             
             console.log('[MemoryUI] 准备调用memoryService.sendMessage', {
@@ -2255,48 +2284,61 @@ export class MemoryUI {
             const settings = extension_settings.vectors_enhanced;
             const context = getContext();
 
-            // 获取标签提取规则
-            const rules = settings.selected_content?.chat?.rules || [];
+            // 获取聊天设置，用于构建消息过滤选项
+            const chatSettings = settings.selected_content.chat || {};
+            const rules = chatSettings.tag_rules || settings.tag_extraction_rules || [];
 
-            // 收集要总结的AI消息 - 使用与performAutoSummarize相同的逻辑
-            const aiMessages = [];
+            // 构建消息过滤选项（遵循内容选择设置）
+            const messageOptions = {
+                includeHidden: chatSettings.include_hidden || false,
+                types: chatSettings.types || { user: true, assistant: true },
+                range: { start: startIndex, end: endIndex }
+            };
 
-            // 从startIndex开始，到endIndex结束（包含），收集所有AI消息
-            for (let i = startIndex; i <= endIndex; i++) {
-                const msg = context.chat[i];
-                if (msg && !msg.is_user && !msg.is_system) {
-                    // 这是AI消息
-                    aiMessages.push({
-                        ...msg,
-                        index: i
-                    });
-                }
-            }
+            // 使用getMessages获取范围内的消息（遵循内容选择设置）
+            const messages = getMessages(context.chat, messageOptions);
 
-            console.log('[MemoryUI] performAutoSummarizeDirect: 收集到的AI消息数量:', aiMessages.length);
+            console.log('[MemoryUI] performAutoSummarizeDirect: 根据内容选择设置收集到的消息数量:', messages.length);
+            console.log('[MemoryUI] performAutoSummarizeDirect: 内容选择设置:', {
+                includeHidden: messageOptions.includeHidden,
+                types: messageOptions.types,
+                range: messageOptions.range
+            });
 
-            if (aiMessages.length === 0) {
-                console.log('[MemoryUI] performAutoSummarizeDirect: 没有找到AI消息');
+            if (messages.length === 0) {
+                console.log('[MemoryUI] performAutoSummarizeDirect: 没有找到符合条件的消息');
                 return false;
             }
 
-            // 处理并格式化AI消息 - 使用与performAutoSummarize相同的逻辑
-            const chatTexts = aiMessages.map(msg => {
-                // 获取消息文本（SillyTavern使用mes属性）
-                const messageText = msg.mes || msg.text || '';
+            // 处理并格式化消息（使用与向量化相同的逻辑）
+            const chatTexts = messages.map(msg => {
+                // 获取消息文本
+                const messageText = msg.text || '';
 
                 if (!messageText) {
-                    console.warn(`[MemoryUI] 楼层 #${msg.index + 1} 的AI消息为空`);
-                    return `#${msg.index + 1} [AI]: （空消息）`;
+                    const msgType = msg.is_user ? '用户' : (msg.is_system ? '系统' : 'AI');
+                    console.warn(`[MemoryUI] 楼层 #${msg.index + 1} 的${msgType}消息为空`);
+                    return `#${msg.index + 1} [${msgType}]: （空消息）`;
                 }
 
-                // 对AI消息应用标签提取规则
-                const extractedText = extractTagContent(messageText, rules, this.settings.content_blacklist || []);
-                return `#${msg.index + 1} [AI]: ${extractedText}`;
+                // 对消息应用标签提取规则（用户消息和系统消息不应用标签）
+                const applyTagsToFirstMessage = chatSettings.apply_tags_to_first_message || false;
+                let extractedText;
+
+                if ((msg.index === 0 && !applyTagsToFirstMessage) || msg.is_user === true || msg.is_system === true) {
+                    // 用户消息、系统消息或首楼消息不应用标签提取
+                    extractedText = messageText;
+                } else {
+                    // AI消息应用标签提取规则
+                    extractedText = extractTagContent(messageText, rules, this.settings.content_blacklist || []);
+                }
+
+                const msgType = msg.is_user ? '用户' : (msg.is_system ? '系统' : 'AI');
+                return `#${msg.index + 1} [${msgType}]: ${extractedText}`;
             }).join('\n\n');
 
             // 添加楼层信息头部
-            const headerInfo = `【自动总结：楼层 #${startIndex + 1} 至 #${endIndex + 1}，共 ${aiMessages.length} 条AI消息】\n\n`;
+            const headerInfo = `【自动总结：楼层 #${startIndex + 1} 至 #${endIndex + 1}，共 ${messages.length} 条消息】\n\n`;
             const content = headerInfo + chatTexts;
 
             // 调试：检查最终内容
@@ -2346,10 +2388,17 @@ export class MemoryUI {
 
                     // 追赶模式下也应该创建世界书，确保每次总结后都有对应的记录
                     if ($('#memory_auto_create_world_book').prop('checked') || this.settings?.memory?.autoCreateWorldBook) {
+                        const messageStats = {
+                            user: messages.filter(m => m.is_user).length,
+                            ai: messages.filter(m => !m.is_user && !m.is_system).length,
+                            system: messages.filter(m => m.is_system).length
+                        };
+
                         await this.memoryService.createWorldBook(true, {
                             start: startIndex + 1,  // 转换为1基索引
                             end: endIndex + 1,      // 转换为1基索引
-                            count: aiMessages.length  // 使用实际的AI消息数量
+                            count: messages.length,  // 使用实际的消息总数
+                            messageTypes: messageStats  // 传递消息类型统计
                         });
                     }
 
