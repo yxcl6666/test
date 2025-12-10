@@ -2473,17 +2473,33 @@ export class MemoryUI {
                  try {
                     console.log('[MemoryUI] performAutoSummarizeDirect: 开始自动向量化当前范围');
 
-                    // 获取范围内所有消息（用户+AI）
-                    const vectorizeOptions = {
-                        includeHidden: true, // 包含可能已经被标记为隐藏的消息
-                        types: { user: true, assistant: true },
-                        range: { start: startIndex, end: endIndex }
-                    };
-                    const messagesToVectorize = getMessages(context.chat, vectorizeOptions);
+                    // 使用与手动向量化相同的内容设置，但限制范围
+                    const vectorizationContentSettings = JSON.parse(JSON.stringify(settings.selected_content));
+
+                    // 修改聊天设置的范围
+                    if (vectorizationContentSettings.chat) {
+                        // 保留原有的设置，只修改范围
+                        vectorizationContentSettings.chat.range = {
+                            start: startIndex,
+                            end: endIndex
+                        };
+
+                        // 日志记录使用的配置
+                        console.log('[MemoryUI] performAutoSummarizeDirect: 使用向量化配置:', {
+                            chunkSize: vectorizationContentSettings.chat?.chunk_size || 'default',
+                            overlap: vectorizationContentSettings.chat?.overlap || 'default',
+                            includeHidden: vectorizationContentSettings.chat?.include_hidden || false,
+                            types: vectorizationContentSettings.chat?.types || { user: true, assistant: true }
+                        });
+                    }
+
+                    // 获取范围内所有消息（使用配置的设置）
+                    const messagesToVectorize = getMessages(context.chat, vectorizationContentSettings);
 
                     if (messagesToVectorize.length > 0) {
                         this.toastr?.info(`正在自动向量化楼层 #${startIndex + 1} 至 #${endIndex + 1} ...`);
                         console.log('[MemoryUI] performAutoSummarizeDirect: 开始自动向量化范围:', startIndex, endIndex);
+                        console.log('[MemoryUI] performAutoSummarizeDirect: 找到消息数量:', messagesToVectorize.length);
 
                         // 获取标签提取规则
                         const rules = settings.tag_extraction_rules || [];
@@ -2502,9 +2518,9 @@ export class MemoryUI {
                             ? `智能追赶向量化 #${startIndex + 1}-${endIndex + 1}`
                             : `自动向量化 #${startIndex + 1}-${endIndex + 1}`;
 
-                        // 调用向量化 (isIncremental=true)
+                        // 调用向量化 (isIncremental=true, 使用完整的内容设置)
                         await this.performVectorization(
-                            settings.selected_content,
+                            vectorizationContentSettings,  // 使用完整的内容设置而不是只有selected_content
                             context.chatId,
                             true,
                             items,
