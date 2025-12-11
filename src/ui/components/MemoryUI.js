@@ -2139,6 +2139,20 @@ export class MemoryUI {
                         this.toastr?.info(`正在自动向量化楼层 #${startIndex + 1} 至 #${endIndex + 1} ...`);
                         console.log('[MemoryUI] 开始自动向量化范围:', startIndex, endIndex);
 
+                        // 输出向量化内容预览
+                        const vectorPreview = messagesToVectorize.slice(0, 3).map(msg => {
+                            const msgType = msg.is_user ? '用户' : 'AI';
+                            const preview = msg.text.substring(0, 100) + (msg.text.length > 100 ? '...' : '');
+                            return `#${msg.index + 1} [${msgType}]: ${preview.replace(/\n/g, '\\n')}`;
+                        }).join('\n\n');
+
+                        console.log(`[MemoryUI] 自动向量化内容预览 (前3条，共${messagesToVectorize.length}条):\n${vectorPreview}`);
+                        console.log('[MemoryUI] 自动向量化使用的内容选择设置:', {
+                            includeHidden: vectorizationContentSettings.chat?.include_hidden || false,
+                            types: vectorizationContentSettings.chat?.types || { user: true, assistant: true },
+                            range: vectorizationContentSettings.chat?.range
+                        });
+
                         const items = messagesToVectorize.map(msg => {
                             let extractedText = msg.text;
                             // 应用标签提取规则 (如果不是首楼且不是用户消息)
@@ -2624,6 +2638,20 @@ export class MemoryUI {
                         this.toastr?.info(`正在自动向量化楼层 #${startIndex + 1} 至 #${endIndex + 1} ...`);
                         console.log('[MemoryUI] performAutoSummarizeDirect: 开始自动向量化范围:', startIndex, endIndex);
                         console.log('[MemoryUI] performAutoSummarizeDirect: 找到消息数量:', messagesToVectorize.length);
+
+                        // 输出向量化内容预览
+                        const vectorPreview = messagesToVectorize.slice(0, 3).map(msg => {
+                            const msgType = msg.is_user ? '用户' : 'AI';
+                            const preview = msg.text.substring(0, 100) + (msg.text.length > 100 ? '...' : '');
+                            return `#${msg.index + 1} [${msgType}]: ${preview.replace(/\n/g, '\\n')}`;
+                        }).join('\n\n');
+
+                        console.log(`[MemoryUI] performAutoSummarizeDirect: 向量化内容预览 (前3条，共${messagesToVectorize.length}条):\n${vectorPreview}`);
+                        console.log('[MemoryUI] performAutoSummarizeDirect: 向量化使用的内容选择设置:', {
+                            includeHidden: vectorizeOptions.includeHidden,
+                            types: vectorizeOptions.types,
+                            range: vectorizeOptions.range
+                        });
 
                         // 获取标签提取规则
                         const rules = settings.tag_extraction_rules || [];
