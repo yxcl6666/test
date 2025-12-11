@@ -97,6 +97,9 @@ export class MemoryUI {
         this.isAutoSummarizing = false;  // 防止自动总结并发执行
         this.isCreatingWorldBook = false;  // 防止重复创建世界书
         this.lastResponseHash = null;  // 记录最后处理的响应哈希，防止重复处理
+
+        // 中断控制器
+        this.summaryAbortController = null;  // 总结中断控制器
     }
 
     async init() {
@@ -381,7 +384,10 @@ export class MemoryUI {
 
         // Smart catch up button handler
         $('#memory_smart_catch_up').off('click').on('click', () => this.handleSmartCatchUp());
-        
+
+        // Abort summary button handler
+        $('#memory_abort_summary').off('click').on('click', () => this.handleAbortSummary());
+
         // Auto-summarize settings
         $('#memory_auto_summarize_enabled').off('change').on('change', (e) => {
             const enabled = e.target.checked;
@@ -615,6 +621,13 @@ export class MemoryUI {
             
             // 设置处理标志，防止重复请求
             this.isProcessing = true;
+
+            // 创建中断控制器
+            this.summaryAbortController = new AbortController();
+
+            // 显示中断按钮，隐藏智能追赶按钮
+            $('#memory_smart_catch_up').hide();
+            $('#memory_abort_summary').show();
             
             try {
                 const maxTokens = parseInt($('#memory_max_tokens').val()) || this.settings.memory?.maxTokens || defaultMemorySettings.maxTokens;
@@ -622,7 +635,8 @@ export class MemoryUI {
                     apiSource: apiSource,
                     apiConfig: apiConfig,
                     summaryFormat: summaryFormat,
-                    maxTokens: maxTokens
+                    maxTokens: maxTokens,
+                    abortSignal: this.summaryAbortController.signal
                 });
                 
                 if (result.success) {
@@ -638,6 +652,13 @@ export class MemoryUI {
             } finally {
                 // 重置处理标志
                 this.isProcessing = false;
+
+                // 清理中断控制器
+                this.summaryAbortController = null;
+
+                // 显示智能追赶按钮，隐藏中断按钮
+                $('#memory_smart_catch_up').show();
+                $('#memory_abort_summary').hide();
             }
         } catch (error) {
             console.error('[MemoryUI] 获取聊天内容失败:', error);
@@ -1805,6 +1826,13 @@ export class MemoryUI {
             // 设置标志，防止并发执行
             this.isAutoSummarizing = true;
 
+            // 创建中断控制器
+            this.summaryAbortController = new AbortController();
+
+            // 显示中断按钮，隐藏智能追赶按钮
+            $('#memory_smart_catch_up').hide();
+            $('#memory_abort_summary').show();
+
             // 执行追赶
             await this.continueSmartCatchUp();
 
@@ -1827,7 +1855,33 @@ export class MemoryUI {
         } finally {
             // 清除标志
             this.isAutoSummarizing = false;
+
+            // 清理中断控制器
+            this.summaryAbortController = null;
+
+            // 显示智能追赶按钮，隐藏中断按钮
+            $('#memory_smart_catch_up').show();
+            $('#memory_abort_summary').hide();
+
             this.hideLoading();
+        }
+    }
+
+    /**
+     * Handle abort summary button click
+     */
+    handleAbortSummary() {
+        if (this.summaryAbortController) {
+            console.log('[MemoryUI] 用户请求中断总结过程');
+            this.summaryAbortController.abort();
+            this.toastr?.info('正在中断总结过程...', '中断');
+
+            // 立即隐藏中断按钮，显示智能追赶按钮
+            $('#memory_abort_summary').hide();
+            $('#memory_smart_catch_up').show();
+
+            // 清理中断控制器
+            this.summaryAbortController = null;
         }
     }
 
@@ -1907,6 +1961,13 @@ export class MemoryUI {
             // 设置标志，防止并发执行
             this.isAutoSummarizing = true;
 
+            // 创建中断控制器
+            this.summaryAbortController = new AbortController();
+
+            // 显示中断按钮，隐藏智能追赶按钮
+            $('#memory_smart_catch_up').hide();
+            $('#memory_abort_summary').show();
+
             // 执行自动总结（传入是否需要追赶的判断）
             await this.performAutoSummarize(currentFloor, keepCount, interval, lastSummarized);
 
@@ -1914,6 +1975,13 @@ export class MemoryUI {
             console.error('[MemoryUI] 自动总结检查失败:', error);
             // 如果检查过程出错，也要清除标志
             this.isAutoSummarizing = false;
+
+            // 清理中断控制器
+            this.summaryAbortController = null;
+
+            // 显示智能追赶按钮，隐藏中断按钮
+            $('#memory_smart_catch_up').show();
+            $('#memory_abort_summary').hide();
         }
     }
     
@@ -1930,6 +1998,11 @@ export class MemoryUI {
 
         try {
             console.log('[MemoryUI] performAutoSummarize 开始执行', { currentFloor, keepCount });
+
+            // 检查中断信号
+            if (this.summaryAbortController?.signal.aborted) {
+                throw new Error('总结被用户中断');
+            }
 
             // 导入必要的函数和工具
             const { extension_settings, getContext } = await import('../../../../../../extensions.js');
@@ -2027,52 +2100,71 @@ export class MemoryUI {
                 this.toastr?.info(`开始自动总结：楼层 #${startIndex + 1} 至 #${endIndex + 1}...`);
             }
 
-            // ---------------------------------------------------------
+              // ---------------------------------------------------------
             // 自动向量化处理
             // ---------------------------------------------------------
             // 检查设置是否启用了自动向量化（默认为true）
             const autoVectorizeEnabled = settings.memory?.autoSummarize?.autoVectorize !== false;
-            
+
             if (this.performVectorization && autoVectorizeEnabled) {
                  try {
-                    // 获取范围内所有消息（用户+AI）
-                    const vectorizeOptions = {
-                        includeHidden: true, // 包含可能已经被标记为隐藏的消息
-                        types: { user: true, assistant: true },
-                        range: { start: startIndex, end: endIndex }
-                    };
-                    const messagesToVectorize = getMessages(context.chat, vectorizeOptions);
-                    
+                    // 导入需要的函数
+                    const { getMessages, createVectorItem } = await import('../../utils/chatUtils.js');
+                    const { extractTagContent } = await import('../../utils/tagExtractor.js');
+
+                    // 获取聊天设置，用于构建与总结相同的消息过滤选项
+                    const chatSettings = settings.selected_content.chat || {};
+                    const rules = chatSettings.tag_rules || settings.tag_extraction_rules || [];
+
+                    // 使用与手动向量化相同的内容设置，但限制范围
+                    const vectorizationContentSettings = JSON.parse(JSON.stringify(settings.selected_content));
+
+                    // 修改聊天设置的范围
+                    if (vectorizationContentSettings.chat) {
+                        vectorizationContentSettings.chat.range = {
+                            start: startIndex,
+                            end: endIndex
+                        };
+                    }
+
+                    console.log('[MemoryUI] 自动向量化使用的内容选择设置:', {
+                        includeHidden: vectorizationContentSettings.chat?.include_hidden || false,
+                        types: vectorizationContentSettings.chat?.types || { user: true, assistant: true },
+                        range: vectorizationContentSettings.chat?.range
+                    });
+
+                    const messagesToVectorize = getMessages(context.chat, vectorizationContentSettings.chat || {});
+
                     if (messagesToVectorize.length > 0) {
                         this.toastr?.info(`正在自动向量化楼层 #${startIndex + 1} 至 #${endIndex + 1} ...`);
                         console.log('[MemoryUI] 开始自动向量化范围:', startIndex, endIndex);
 
                         const items = messagesToVectorize.map(msg => {
-                             let extractedText = msg.text;
-                             // 应用标签提取规则 (如果不是首楼且不是用户消息)
-                             if (msg.index !== 0 && !msg.is_user && rules && rules.length > 0) {
-                                 extractedText = extractTagContent(msg.text, rules, settings.content_blacklist || []);
-                             }
-                             
-                             return createVectorItem(msg, extractedText, extractedText);
+                            let extractedText = msg.text;
+                            // 应用标签提取规则 (如果不是首楼且不是用户消息)
+                            if (msg.index !== 0 && !msg.is_user && rules && rules.length > 0) {
+                                extractedText = extractTagContent(msg.text, rules, settings.content_blacklist || []);
+                            }
+
+                            return createVectorItem(msg, extractedText, extractedText);
                         });
 
                         // 构造特殊的任务名
                         const taskName = `自动向量化 #${startIndex + 1}-${endIndex + 1}`;
-                        
-                        // 调用向量化 (isIncremental=true)
+
+                        // 调用向量化 (isIncremental=true, 使用完整的内容设置)
                         await this.performVectorization(
-                            settings.selected_content, 
-                            context.chatId, 
-                            true, 
-                            items, 
-                            { 
+                            vectorizationContentSettings,  // 使用完整的内容设置而不是只有selected_content
+                            context.chatId,
+                            true,
+                            items,
+                            {
                                 taskType: 'auto_vectorization',
                                 customTaskName: taskName,
                                 skipDeduplication: false
                             }
                         );
-                        
+
                         console.log('[MemoryUI] 自动向量化完成');
                     }
                  } catch (vecError) {
@@ -2082,7 +2174,7 @@ export class MemoryUI {
                  }
             }
             // ---------------------------------------------------------
-            
+
             // 获取聊天设置，用于构建消息过滤选项
             const chatSettings = settings.selected_content.chat || {};
 
@@ -2322,6 +2414,11 @@ export class MemoryUI {
             return;
         }
 
+        // 检查中断信号
+        if (this.summaryAbortController?.signal.aborted) {
+            throw new Error('总结被用户中断');
+        }
+
         const currentFloor = context.chat.length - 1;
         const safeLimit = currentFloor - keepCount;  // 不可逾越的红线
         let lastSummarized = await this.getLastSummarizedFloor();
@@ -2363,6 +2460,11 @@ export class MemoryUI {
         await catchUpProcessor.processSerially(
             batches,
             async (batch) => {
+                // 检查中断信号
+                if (this.summaryAbortController?.signal.aborted) {
+                    throw new Error('总结被用户中断');
+                }
+
                 console.log(`[MemoryUI] 追赶批次 ${catchUpCount + 1}:`, batch);
 
                 // 显示当前批次提示
@@ -2416,6 +2518,11 @@ export class MemoryUI {
 
         try {
             console.log(`[MemoryUI] performAutoSummarizeInRange: 开始总结 ${startIndex}-${endIndex}`, { interval, keepCount });
+
+            // 检查中断信号
+            if (this.summaryAbortController?.signal.aborted) {
+                throw new Error('总结被用户中断');
+            }
 
             // 计算实际要总结的楼层范围（显示楼层是1-based）
             const displayStartFloor = startIndex + 1;

@@ -484,14 +484,26 @@
             <span>向量化总结</span>
           </button>
 
-          <!-- Smart Catch Up Button -->
-          <button id="memory_smart_catch_up"
-                  class="menu_button menu_button_icon"
-                  title="智能追赶未总结的历史内容"
-                  style="width: 100%; margin-top: 10px;">
-            <i class="fa-solid fa-forward"></i>
-            <span>智能追赶</span>
-          </button>
+          <!-- Smart Catch Up Button Container -->
+          <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <!-- Smart Catch Up Button -->
+            <button id="memory_smart_catch_up"
+                    class="menu_button menu_button_icon"
+                    title="智能追赶未总结的历史内容"
+                    style="flex: 1;">
+              <i class="fa-solid fa-forward"></i>
+              <span>智能追赶</span>
+            </button>
+
+            <!-- Abort Summary Button -->
+            <button id="memory_abort_summary"
+                    class="menu_button menu_button_icon vectors-btn-hidden"
+                    title="中断总结过程"
+                    style="flex: 1;">
+              <i class="fa-solid fa-stop"></i>
+              <span>中断总结</span>
+            </button>
+          </div>
 
           <!-- Output Area -->
           <div class="memory-output-section" style="margin-top: 15px;">
