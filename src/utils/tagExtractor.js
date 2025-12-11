@@ -38,7 +38,17 @@ export function extractTagContent(text, rules, blacklist = []) {
                     results.push(...extractSimpleTag(workingText, rule.value));
                     results.push(...extractCurlyBraceTag(workingText, rule.value));
                 } else if (rule.type === 'regex_include') {
-                    const regex = new RegExp(rule.value, 'gi');
+                    let regex;
+                    // 检查是否是 /pattern/flags 格式
+                    if (rule.value.startsWith('/') && rule.value.lastIndexOf('/') > 0) {
+                        const lastSlashIndex = rule.value.lastIndexOf('/');
+                        const pattern = rule.value.slice(1, lastSlashIndex);
+                        const flags = rule.value.slice(lastSlashIndex + 1);
+                        regex = new RegExp(pattern, flags || 'gi');
+                    } else {
+                        // 旧格式，直接使用
+                        regex = new RegExp(rule.value, 'gi');
+                    }
                     const matches = [...workingText.matchAll(regex)];
                     matches.forEach(match => {
                         if (match[1]) results.push(match[1]);
@@ -59,8 +69,25 @@ export function extractTagContent(text, rules, blacklist = []) {
         // Apply regex_exclude rules for cleanup
         for (const rule of cleanupRules) {
             try {
-                const regex = new RegExp(rule.value, 'gi');
+                let regex;
+                // 检查是否是 /pattern/flags 格式
+                if (rule.value.startsWith('/') && rule.value.lastIndexOf('/') > 0) {
+                    const lastSlashIndex = rule.value.lastIndexOf('/');
+                    const pattern = rule.value.slice(1, lastSlashIndex);
+                    const flags = rule.value.slice(lastSlashIndex + 1);
+                    regex = new RegExp(pattern, flags || 'gi');
+                    console.log(`[tagExtractor] 解析正则规则: /${pattern}/${flags || 'gi'}`);
+                } else {
+                    // 旧格式，直接使用
+                    regex = new RegExp(rule.value, 'gi');
+                    console.log(`[tagExtractor] 使用旧格式正则: ${rule.value}`);
+                }
+                const beforeLength = contentBlock.length;
                 contentBlock = contentBlock.replace(regex, '');
+                const afterLength = contentBlock.length;
+                if (beforeLength !== afterLength) {
+                    console.log(`[tagExtractor] 清理规则匹配，移除 ${beforeLength - afterLength} 字符`);
+                }
             } catch (error) {
                 console.error(`Error applying cleanup rule:`, { rule, error });
             }

@@ -126,13 +126,14 @@ export class BatchProcessor {
                 reject(new Error(`处理超时（${timeout/1000}秒）`));
             }, timeout);
 
+            // 定义onAbort函数，确保在Promise构造器内部定义
+            const onAbort = () => {
+                clearTimeout(timer);
+                reject(new Error('处理被用户中断'));
+            };
+
             // 检查中断信号
             if (abortSignal) {
-                const onAbort = () => {
-                    clearTimeout(timer);
-                    reject(new Error('处理被用户中断'));
-                };
-
                 if (abortSignal.aborted) {
                     onAbort();
                     return;
