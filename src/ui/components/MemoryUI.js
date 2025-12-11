@@ -2165,11 +2165,26 @@ export class MemoryUI {
                             range: vectorizationContentSettings.chat?.range
                         });
 
+                        // 应用标签提取规则（包括正则过滤）和黑名单
+                        const contentBlacklist = settings.content_blacklist || [];
+                        console.log('[MemoryUI] 自动向量化应用标签提取规则:', rules);
+                        console.log('[MemoryUI] 自动向量化内容黑名单:', contentBlacklist);
+
                         const items = messagesToVectorize.map(msg => {
                             let extractedText = msg.text;
-                            // 应用标签提取规则 (如果不是首楼且不是用户消息)
-                            if (msg.index !== 0 && !msg.is_user && rules && rules.length > 0) {
-                                extractedText = extractTagContent(msg.text, rules, settings.content_blacklist || []);
+
+                            // 根据chatSettings.apply_tags_to_first_message设置决定是否对首楼应用规则
+                            const applyTagsToFirstMessage = chatSettings.apply_tags_to_first_message || false;
+                            if ((msg.index !== 0 && !msg.is_user && !msg.is_system) ||
+                                (msg.index === 0 && applyTagsToFirstMessage)) {
+                                // 对AI消息（非首楼）或设置了apply_tags_to_first_message的首楼应用标签提取规则
+                                extractedText = extractTagContent(msg.text, rules, contentBlacklist);
+
+                                // 记录是否进行了文本清洗
+                                if (extractedText !== msg.text) {
+                                    console.log(`[MemoryUI] 自动向量化楼层 #${msg.index + 1} 已应用标签提取规则`);
+                                    console.log(`[MemoryUI] 自动向量化原始长度: ${msg.text.length} → 清洗后长度: ${extractedText.length}`);
+                                }
                             }
 
                             return createVectorItem(msg, extractedText, extractedText);
@@ -2661,13 +2676,30 @@ export class MemoryUI {
                             range: vectorizeOptions.range
                         });
 
-                        // 获取标签提取规则
-                        const rules = settings.tag_extraction_rules || [];
+                        // 获取标签提取规则 - 使用vectorizationContentSettings中的规则以保持一致性
+                        const chatSettings = vectorizationContentSettings.chat || {};
+                        const rules = chatSettings.tag_rules || settings.tag_extraction_rules || [];
+                        const contentBlacklist = settings.content_blacklist || [];
+
+                        console.log('[MemoryUI] performAutoSummarizeDirect: 应用标签提取规则:', rules);
+                        console.log('[MemoryUI] performAutoSummarizeDirect: 内容黑名单:', contentBlacklist);
+
                         const items = messagesToVectorize.map(msg => {
                              let extractedText = msg.text;
-                             // 应用标签提取规则 (如果不是首楼且不是用户消息)
-                             if (msg.index !== 0 && !msg.is_user && rules && rules.length > 0) {
-                                 extractedText = extractTagContent(msg.text, rules, settings.content_blacklist || []);
+
+                             // 应用标签提取规则（包括正则过滤）和黑名单
+                             // 根据chatSettings.apply_tags_to_first_message设置决定是否对首楼应用规则
+                             const applyTagsToFirstMessage = chatSettings.apply_tags_to_first_message || false;
+                             if ((msg.index !== 0 && !msg.is_user && !msg.is_system) ||
+                                 (msg.index === 0 && applyTagsToFirstMessage)) {
+                                 // 对AI消息（非首楼）或设置了apply_tags_to_first_message的首楼应用标签提取规则
+                                 extractedText = extractTagContent(msg.text, rules, contentBlacklist);
+
+                                 // 记录是否进行了文本清洗
+                                 if (extractedText !== msg.text) {
+                                     console.log(`[MemoryUI] performAutoSummarizeDirect: 楼层 #${msg.index + 1} 已应用标签提取规则`);
+                                     console.log(`[MemoryUI] performAutoSummarizeDirect: 原始长度: ${msg.text.length} → 清洗后长度: ${extractedText.length}`);
+                                 }
                              }
 
                              return createVectorItem(msg, extractedText, extractedText);
