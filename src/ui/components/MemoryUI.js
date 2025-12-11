@@ -2119,12 +2119,24 @@ export class MemoryUI {
                     // 使用与手动向量化相同的内容设置，但限制范围
                     const vectorizationContentSettings = JSON.parse(JSON.stringify(settings.selected_content));
 
-                    // 修改聊天设置的范围
+                    // 修改聊天设置的范围和分块参数
                     if (vectorizationContentSettings.chat) {
                         vectorizationContentSettings.chat.range = {
                             start: startIndex,
                             end: endIndex
                         };
+
+                        // 确保使用正确的分块参数
+                        const actualChunkSize = parseInt(settings.chunk_size) || 1000;
+                        const actualOverlap = parseInt(settings.overlap_percent) || 10;
+
+                        vectorizationContentSettings.chat.chunk_size = actualChunkSize;
+                        vectorizationContentSettings.chat.overlap_percent = actualOverlap;
+
+                        console.log('[MemoryUI] 自动向量化配置:', {
+                            chunkSize: actualChunkSize,
+                            overlap: actualOverlap
+                        });
                     }
 
                     console.log('[MemoryUI] 自动向量化使用的内容选择设置:', {
@@ -2474,11 +2486,6 @@ export class MemoryUI {
         await catchUpProcessor.processSerially(
             batches,
             async (batch) => {
-                // 检查中断信号
-                if (this.summaryAbortController?.signal.aborted) {
-                    throw new Error('总结被用户中断');
-                }
-
                 console.log(`[MemoryUI] 追赶批次 ${catchUpCount + 1}:`, batch);
 
                 // 显示当前批次提示
@@ -2506,7 +2513,8 @@ export class MemoryUI {
             },
             (processed, total) => {
                 console.log(`[MemoryUI] 追赶进度: ${processed}/${total} 批次`);
-            }
+            },
+            this.summaryAbortController?.signal  // 传递中断信号
         );
 
         // 显示最终完成提示

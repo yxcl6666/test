@@ -61,17 +61,23 @@ export class BatchProcessor {
      * @param {Array} items 要处理的项目
      * @param {Function} processor 处理函数
      * @param {Function} onProgress 进度回调
+     * @param {AbortSignal} abortSignal 中断信号
      * @returns {Promise<Array>} 处理结果
      */
-    async processSerially(items, processor, onProgress) {
+    async processSerially(items, processor, onProgress, abortSignal = null) {
         const results = [];
         const total = items.length;
 
         for (let i = 0; i < items.length; i++) {
+            // 检查中断信号
+            if (abortSignal && abortSignal.aborted) {
+                throw new Error('处理被用户中断');
+            }
+
             const item = items[i];
 
             // 处理当前项
-            const result = await this.wrapInTimeout(() => processor(item), 300000); // 5分钟超时（适合慢速API）
+            const result = await this.wrapInTimeout(() => processor(item), 300000, abortSignal); // 5分钟超时（适合慢速API）
             results.push(result);
 
             // 进度回调
@@ -111,13 +117,29 @@ export class BatchProcessor {
      * 将处理函数包装在超时中，避免长时间阻塞
      * @param {Function} fn 处理函数（返回Promise）
      * @param {number} timeout 超时时间（毫秒）
+     * @param {AbortSignal} abortSignal 中断信号
      * @returns {Promise} 包装后的Promise
      */
-    wrapInTimeout(fn, timeout = 30000) { // 默认30秒超时
+    wrapInTimeout(fn, timeout = 30000, abortSignal = null) { // 默认30秒超时
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 reject(new Error(`处理超时（${timeout/1000}秒）`));
             }, timeout);
+
+            // 检查中断信号
+            if (abortSignal) {
+                const onAbort = () => {
+                    clearTimeout(timer);
+                    reject(new Error('处理被用户中断'));
+                };
+
+                if (abortSignal.aborted) {
+                    onAbort();
+                    return;
+                }
+
+                abortSignal.addEventListener('abort', onAbort);
+            }
 
             // 确保fn是函数
             if (typeof fn !== 'function') {
@@ -129,10 +151,16 @@ export class BatchProcessor {
             Promise.resolve(fn())
                 .then(result => {
                     clearTimeout(timer);
+                    if (abortSignal) {
+                        abortSignal.removeEventListener('abort', onAbort);
+                    }
                     resolve(result);
                 })
                 .catch(error => {
                     clearTimeout(timer);
+                    if (abortSignal) {
+                        abortSignal.removeEventListener('abort', onAbort);
+                    }
                     reject(error);
                 });
         });
