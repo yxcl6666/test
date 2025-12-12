@@ -1361,6 +1361,17 @@ export class MemoryUI {
                 }, 100);
             });
         }
+
+        // 每分钟自动校准功能
+        this.autoCalibrationTimer = setInterval(() => {
+            // 只有在自动总结启用且页面可见时才执行校准
+            if ($('#memory_auto_summarize_enabled').prop('checked') &&
+                $('#worldBookProgressTrigger').prop('checked') &&
+                !document.hidden) {
+                this.updateAutoSummarizeStatus();
+                console.debug('[MemoryUI] Auto calibration: Updated auto summarize status');
+            }
+        }, 60000); // 每分钟执行一次
     }
     
     /**
@@ -3027,6 +3038,12 @@ export class MemoryUI {
             this.eventSource.off(this.event_types.MESSAGE_EDITED);
             this.eventSource.off(this.event_types.CHAT_CHANGED);
             this.eventSource.off(this.event_types.CHAT_LOADED);
+        }
+
+        // 清理自动校准定时器
+        if (this.autoCalibrationTimer) {
+            clearInterval(this.autoCalibrationTimer);
+            this.autoCalibrationTimer = null;
         }
 
         this.initialized = false;
