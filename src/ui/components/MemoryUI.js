@@ -1813,7 +1813,7 @@ export class MemoryUI {
             const startFloor = lastSummarized;
             const endFloor = Math.min(lastSummarized + (willCatchUpFloors * interval) - 1, maxEndFloor);
             const confirmation = `即将智能追赶第 ${startFloor} 至 ${endFloor} 层（共 ${willCatchUpFloors} 个批次）。是否继续？\n\n` +
-                                `每批次 ${interval} 层，将保留最近 ${keepCount} 层不被总结。`;
+                                `每批次 ${interval} 层，追赶结束后将保留最近 ${keepCount} 层不被总结。`;
 
             if (!confirm(confirmation)) {
                 return;
