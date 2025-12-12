@@ -1362,16 +1362,14 @@ export class MemoryUI {
             });
         }
 
-        // 每分钟自动校准功能
+        // 每30秒自动校准功能（全局性，相当于静默重置）
         this.autoCalibrationTimer = setInterval(() => {
-            // 只有在自动总结启用且页面可见时才执行校准
-            if ($('#memory_auto_summarize_enabled').prop('checked') &&
-                $('#worldBookProgressTrigger').prop('checked') &&
-                !document.hidden) {
-                this.updateAutoSummarizeStatus();
-                console.debug('[MemoryUI] Auto calibration: Updated auto summarize status');
+            // 只在页面可见时执行，避免后台无效操作
+            if (!document.hidden) {
+                this.silentResetAutoSummarize();
+                console.debug('[MemoryUI] Auto calibration: Silent reset performed');
             }
-        }, 60000); // 每分钟执行一次
+        }, 30000); // 每30秒执行一次
     }
     
     /**
@@ -1759,6 +1757,41 @@ export class MemoryUI {
         // 实际总结范围：currentFloor 到 triggerFloor（索引）
         // 显示范围：#(currentFloor+1) 到 #(triggerFloor+1)
         this.toastr?.success(`已重置！下次将在楼层 #${triggerFloor + 1} 触发总结（将总结 #${currentFloor + 1} 至 #${triggerFloor + 1}）`);
+    }
+
+    /**
+     * Silent reset auto-summarize (without showing any toast messages)
+     */
+    async silentResetAutoSummarize() {
+        const context = this.getContext ? this.getContext() : getContext();
+
+        if (!context || !context.chat) {
+            return; // 静默返回，不显示警告
+        }
+
+        // 获取UI元素状态
+        const syncEnabled = $('#memory_auto_sync_world_info').prop('checked');
+
+        // 如果启用了同步，则强制从世界书同步
+        if (syncEnabled) {
+            console.log('[MemoryUI] 静默重置：从世界书同步进度');
+
+            // 强制重新扫描世界书
+            const lastSummarized = await this.getLastSummarizedFloor(true);
+
+            // 更新状态显示（传入forceSync=true确保使用最新的lastSummarized）
+            await this.forceUpdateAutoSummarizeStatus(lastSummarized);
+            return;
+        }
+
+        // 否则执行原逻辑：重置为当前楼层
+        const currentFloor = context.chat.length - 1;
+
+        // 保存当前楼层作为新的基准点
+        this.saveToChatMetadata('lastSummarizedFloor', currentFloor);
+
+        // 更新UI显示（传入currentFloor作为lastSummarized）
+        await this.forceUpdateAutoSummarizeStatus(currentFloor);
     }
 
     /**
