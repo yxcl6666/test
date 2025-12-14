@@ -227,20 +227,20 @@ export class MemoryUI {
         // 1. 获取 Metadata 中的值
         let lastSummarized = this.getFromChatMetadata('lastSummarizedFloor');
 
-        // 如果没有值，默认从0开始
+        // 如果没有值，默认从1开始（基于世界书进度触发的最低楼层从第1层开始）
         if (lastSummarized === undefined || lastSummarized === null) {
-            lastSummarized = 0;
-            console.log(`[MemoryUI] getLastSummarizedFloor: 没有历史记录，从0开始`);
+            lastSummarized = 1;
+            console.log(`[MemoryUI] getLastSummarizedFloor: 没有历史记录，从1开始（基于世界书进度触发）`);
         } else {
             // 检查值是否合理（不能超过当前聊天楼层数）
             const context = this.getContext ? this.getContext() : window.getContext?.();
             const currentFloor = context?.chat?.length - 1 || 0;
 
-            // 如果记录的值超过了当前楼层数，重置为0
-            if (lastSummarized > currentFloor) {
-                console.warn(`[MemoryUI] lastSummarizedFloor (${lastSummarized}) 超过了当前楼层数 (${currentFloor})，重置为0`);
-                lastSummarized = 0;
-                this.saveToChatMetadata('lastSummarizedFloor', 0);
+            // 如果记录的值超过了当前楼层数，或者值为0，重置为1
+            if (lastSummarized > currentFloor || lastSummarized === 0) {
+                console.warn(`[MemoryUI] lastSummarizedFloor (${lastSummarized}) ${lastSummarized > currentFloor ? '超过了当前楼层数' : '为0'}，重置为1`);
+                lastSummarized = 1;
+                this.saveToChatMetadata('lastSummarizedFloor', 1);
             } else {
                 console.log(`[MemoryUI] getLastSummarizedFloor: 从 metadata 获取到 lastSummarized: ${lastSummarized}`);
             }
@@ -273,10 +273,10 @@ export class MemoryUI {
 
             if (!chatWorld) {
                 console.warn('[MemoryUI] getLastSummarizedFloor: 没有绑定世界书，无法同步。');
-                // 在 forceSync 模式下，如果世界书未绑定，也应该重置为 0
+                // 在 forceSync 模式下，如果世界书未绑定，也应该重置为 1（基于世界书进度触发从第1层开始）
                 if (forceSync) {
-                    this.saveToChatMetadata('lastSummarizedFloor', 0);
-                    return 0;
+                    this.saveToChatMetadata('lastSummarizedFloor', 1);
+                    return 1;
                 }
                 return lastSummarized; // 否则回退到 metadata 值
             }
@@ -286,8 +286,8 @@ export class MemoryUI {
             if (!worldData || !worldData.entries) {
                 console.warn('[MemoryUI] getLastSummarizedFloor: 无法加载世界书数据或没有条目。');
                 if (forceSync) {
-                    this.saveToChatMetadata('lastSummarizedFloor', 0);
-                    return 0;
+                    this.saveToChatMetadata('lastSummarizedFloor', 1);
+                    return 1;
                 }
                 return lastSummarized; // 否则回退到 metadata 值
             }
@@ -340,21 +340,21 @@ export class MemoryUI {
                 }
             } else { // maxFloor <= -1 (世界书里没找到楼层信息)
                 if (forceSync) {
-                    // 如果是强制同步，但世界书里没找到楼层信息，则直接重置为0
-                    console.log('[MemoryUI] getLastSummarizedFloor: 强制同步但未在世界书中发现楼层信息，重置为0');
-                    this.saveToChatMetadata('lastSummarizedFloor', 0);
-                    return 0;
+                    // 如果是强制同步，但世界书里没找到楼层信息，则直接重置为1（基于世界书进度触发从第1层开始）
+                    console.log('[MemoryUI] getLastSummarizedFloor: 强制同步但未在世界书中发现楼层信息，重置为1');
+                    this.saveToChatMetadata('lastSummarizedFloor', 1);
+                    return 1;
                 } else {
                     console.log('[MemoryUI] getLastSummarizedFloor: 未在世界书中发现楼层信息且未强制同步。返回 metadata 值。');
                 }
             }
         } catch (error) {
             console.error('[MemoryUI] getLastSummarizedFloor: 同步世界书进度失败 (异常):', error);
-            // 如果出错，且是强制同步，也应该重置为0
+            // 如果出错，且是强制同步，也应该重置为1（基于世界书进度触发从第1层开始）
             if (forceSync) {
-                console.log('[MemoryUI] getLastSummarizedFloor: 强制同步因错误失败，重置为0');
-                this.saveToChatMetadata('lastSummarizedFloor', 0);
-                return 0;
+                console.log('[MemoryUI] getLastSummarizedFloor: 强制同步因错误失败，重置为1');
+                this.saveToChatMetadata('lastSummarizedFloor', 1);
+                return 1;
             }
         }
 
@@ -396,11 +396,21 @@ export class MemoryUI {
             if (enabled) {
                 // 初始化lastSummarizedFloor，确保有固定的基准点
                 const lastSummarized = this.getFromChatMetadata('lastSummarizedFloor');
+                const syncEnabled = $('#memory_auto_sync_world_info').prop('checked') ||
+                                   this.settings?.memory?.autoSummarize?.syncWorldInfo || false;
+
                 if (!lastSummarized || lastSummarized === 0) {
-                    const context = this.getContext ? this.getContext() : getContext();
-                    const currentFloor = context?.chat?.length - 1 || 0;
-                    console.log('[MemoryUI] 初始化lastSummarizedFloor为当前楼层:', currentFloor);
-                    this.saveToChatMetadata('lastSummarizedFloor', currentFloor);
+                    if (syncEnabled) {
+                        // 如果启用了基于世界书进度触发，从第1层开始
+                        console.log('[MemoryUI] 初始化lastSummarizedFloor为1（基于世界书进度触发）');
+                        this.saveToChatMetadata('lastSummarizedFloor', 1);
+                    } else {
+                        // 否则使用当前楼层
+                        const context = this.getContext ? this.getContext() : getContext();
+                        const currentFloor = context?.chat?.length - 1 || 0;
+                        console.log('[MemoryUI] 初始化lastSummarizedFloor为当前楼层:', currentFloor);
+                        this.saveToChatMetadata('lastSummarizedFloor', currentFloor);
+                    }
                 }
                 this.updateAutoSummarizeStatus();
             }
@@ -1731,7 +1741,7 @@ export class MemoryUI {
             // lastSummarized 是下一个开始的索引，触发楼层 = lastSummarized + (interval - 1)
             const triggerFloor = lastSummarized + (interval - 1);
 
-            if (lastSummarized > 0) {
+            if (lastSummarized >= 1) {
                 this.toastr?.success(`已同步世界书进度！下次将在楼层 #${triggerFloor + 1} 触发总结（总结 #${lastSummarized} 至 #${triggerFloor}）`);
             } else {
                 this.toastr?.info(`已重置（未在世界书中发现进度），下次将在楼层 #${triggerFloor + 1} 触发总结`);
@@ -2782,11 +2792,18 @@ export class MemoryUI {
             const rules = chatSettings.tag_rules || settings.tag_extraction_rules || [];
 
             // 构建消息过滤选项（遵循内容选择设置）
-            const messageOptions = {
+            let messageOptions = {
                 includeHidden: chatSettings.include_hidden || false,
                 types: chatSettings.types || { user: true, assistant: true },
                 range: { start: startIndex, end: endIndex }
             };
+
+            // 特殊处理：当startIndex为0时，无论如何都包含第0层消息
+            if (startIndex === 0) {
+                messageOptions.types = { user: true, assistant: true };
+                messageOptions.includeHidden = true;
+                console.log('[MemoryUI] performAutoSummarizeDirect: 特殊处理startIndex=0，强制包含用户消息和隐藏消息');
+            }
 
             // 使用getMessages获取范围内的消息（遵循内容选择设置）
             const messages = getMessages(context.chat, messageOptions);
@@ -2800,6 +2817,21 @@ export class MemoryUI {
 
             if (messages.length === 0) {
                 console.log('[MemoryUI] performAutoSummarizeDirect: 没有找到符合条件的消息');
+                console.log('[MemoryUI] performAutoSummarizeDirect: 调试信息 -', {
+                    startIndex,
+                    endIndex,
+                    totalChatMessages: context.chat.length,
+                    chatId: context.chatId
+                });
+
+                // 输出聊天消息的详细信息
+                console.log('[MemoryUI] performAutoSummarizeDirect: 聊天消息详情:');
+                for (let i = startIndex; i <= endIndex && i < context.chat.length; i++) {
+                    const msg = context.chat[i];
+                    const msgType = msg.is_user ? '用户' : (msg.is_system ? '系统' : 'AI');
+                    console.log(`  - 楼层 #${i + 1} (${msgType}): ${msg.text ? msg.text.substring(0, 50) + '...' : '(空消息)'}`);
+                }
+
                 return false;
             }
 
